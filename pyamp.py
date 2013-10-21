@@ -57,13 +57,18 @@ class Player(object):
 class ProgressBar(object):
     def __init__(self):
         self.fraction = 0
-        self._prog_chars = ['=', '-']
+        self._prog_chars = ['-', '=']
 
     def draw(self, width):
         chars = [' '] * width
-        filled = int(self.fraction * width)
-        chars[:filled] = self._prog_chars[0] * filled
+        filled = self.fraction * width
+        over = filled - int(filled)
+        filled = int(filled)
+        chars[:filled] = self._prog_chars[-1] * filled
+        final_char = self._prog_chars[int(over * len(self._prog_chars))]
+        chars[filled] = final_char
         return '[{}]'.format(''.join(chars))
+
 
 if __name__ == '__main__':
     prog = ProgressBar()
@@ -74,7 +79,7 @@ if __name__ == '__main__':
         while p.gst_player.get_state()[1] == gst.STATE_PLAYING:
             p.handle_messages()
             prog.fraction = p.get_position() / p.get_duration()
-            print prog.draw(30)
+            print prog.draw(10)
             time.sleep(0.5)
     except KeyboardInterrupt:
         print 'Stopping player gracefully'
