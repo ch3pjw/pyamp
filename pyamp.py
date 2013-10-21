@@ -2,6 +2,9 @@
 import sys
 import os
 import time
+
+import blessings
+
 import pygst
 pygst.require('0.10')
 import gst
@@ -71,6 +74,7 @@ class ProgressBar(object):
 
 
 if __name__ == '__main__':
+    term = blessings.Terminal()
     prog = ProgressBar()
     p = Player()
     p.set_file(sys.argv[1])
@@ -79,8 +83,10 @@ if __name__ == '__main__':
         while p.gst_player.get_state()[1] == gst.STATE_PLAYING:
             p.handle_messages()
             prog.fraction = p.get_position() / p.get_duration()
-            print prog.draw(10)
-            time.sleep(0.5)
+            with term.location(0, term.height - 1):
+                print prog.draw(10),
+                sys.stdout.flush()
+            time.sleep(0.1)
     except KeyboardInterrupt:
         print 'Stopping player gracefully'
         p.stop()
