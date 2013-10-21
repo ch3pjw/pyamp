@@ -54,14 +54,27 @@ class Player(object):
         self.gst_player.set_state(gst.STATE_NULL)
 
 
+class ProgressBar(object):
+    def __init__(self):
+        self.fraction = 0
+        self._prog_chars = ['=', '-']
+
+    def draw(self, width):
+        chars = [' '] * width
+        filled = int(self.fraction * width)
+        chars[:filled] = self._prog_chars[0] * filled
+        return '[{}]'.format(''.join(chars))
+
 if __name__ == '__main__':
+    prog = ProgressBar()
     p = Player()
     p.set_file(sys.argv[1])
     p.play()
     try:
         while p.gst_player.get_state()[1] == gst.STATE_PLAYING:
             p.handle_messages()
-            print '{:.2f}/{:.2f}'.format(p.get_position(), p.get_duration())
+            prog.fraction = p.get_position() / p.get_duration()
+            print prog.draw(30)
             time.sleep(0.5)
     except KeyboardInterrupt:
         print 'Stopping player gracefully'
