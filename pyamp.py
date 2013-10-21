@@ -21,6 +21,26 @@ class Player(object):
             else:
                 break
 
+    def get_duration(self):
+        '''
+        :returns: The total duration of the currently playing track, in
+        seconds, or None if the duration could not be retrieved
+        '''
+        try:
+            duration, format_ = self.gst_player.query_duration(
+                gst.FORMAT_TIME, None)
+        except gst.QueryError:
+            return
+        return duration / 1e9
+
+    def get_position(self):
+        try:
+            position, format_ = self.gst_player.query_position(
+                gst.FORMAT_TIME, None)
+        except gst.QueryError:
+            return
+        return position / 1e9
+
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
         print 'setting filepath', filepath
@@ -41,6 +61,7 @@ if __name__ == '__main__':
     try:
         while p.gst_player.get_state()[1] == gst.STATE_PLAYING:
             p.handle_messages()
+            print '{:.2f}/{:.2f}'.format(p.get_position(), p.get_duration())
             time.sleep(0.5)
     except KeyboardInterrupt:
         print 'Stopping player gracefully'
