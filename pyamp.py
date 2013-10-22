@@ -120,15 +120,16 @@ class UI(object):
             self.player.update()
         except StopIteration:
             self.quit()
-        if self.player.playing:
-            self.draw()
+        self.draw()
 
     def draw(self):
-        position = self.player.get_position()
-        duration = self.player.get_duration()
-        self.progress_bar.fraction = position / duration
-        self.time_check.position = position
-        self.time_check.duration = duration
+        print self.terminal.clear()
+        if self.player.playing:
+            position = self.player.get_position()
+            duration = self.player.get_duration()
+            self.progress_bar.fraction = position / duration
+            self.time_check.position = position
+            self.time_check.duration = duration
         total_width = self.terminal.width - 2
         with self.terminal.location(1, self.terminal.height - 1):
             print self.status_bar.draw(total_width, 1),
