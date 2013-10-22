@@ -26,6 +26,10 @@ class Player(object):
         self.progress_bar = ProgressBar()
         self.terminal = Terminal()
 
+        self.key_map = {
+            'q': self.quit,
+            ' ': self.pause}
+
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
         while True:
@@ -55,9 +59,24 @@ class Player(object):
             return
         return position / 1e9
 
+    @property
+    def state(self):
+        '''We define our own getter for state because we don't continually want
+        to be doing index lookups or tuple unpacking on the result of the one
+        provided by gst-python.
+        '''
+        success, state, pending = self.gst_player.get_state()
+        return state
+
+    @state.setter
+    def state(self, state):
+        '''We define a 'state' setter for symmetry with the getter.
+        '''
+        self.gst_player.set_state(state)
+
     def update(self):
         self._handle_messages()
-        if self.gst_player.get_state()[1] == gst.STATE_PLAYING:
+        if self.state == gst.STATE_PLAYING:
             self.draw()
 
     def draw(self):
@@ -74,7 +93,13 @@ class Player(object):
 
     def play(self):
         self.gst_player.set_property('volume', 1)
-        self.gst_player.set_state(gst.STATE_PLAYING)
+        self.state = gst.STATE_PLAYING
+
+    def pause(self):
+        if self.state == gst.STATE_PLAYING:
+            self.state = gst.STATE_PAUSED
+        else:
+            self.state = gst.STATE_PLAYING
 
     def stop(self):
         self.gst_player.set_state(gst.STATE_NULL)
@@ -89,6 +114,13 @@ class Player(object):
             time.sleep(step_time)
 
     def _handle_sigint(self, signal, frame):
+        self.quit()
+
+    def handle_input(self, char):
+        action = self.key_map.get(char, lambda: None)
+        action()
+
+    def quit(self):
         self.fade_out()
         self.stop()
 
@@ -99,7 +131,7 @@ class Player(object):
                     signal.signal(signal.SIGINT, self._handle_sigint)
                     self.looping_call = task.LoopingCall(self.update)
                     self.looping_call.start(0.1)
-                    stdio.StandardIO(InputReader())
+                    stdio.StandardIO(InputReader(self))
                     self.reactor.run()
 
 
@@ -121,8 +153,12 @@ class ProgressBar(object):
 
 
 class InputReader(protocol.Protocol):
+    def __init__(self, player):
+        self.player = player
+
     def dataReceived(self, data):
-        print 'data:', data
+        for char in data:
+            self.player.handle_input(char)
 
 
 class Terminal(blessings.Terminal):
