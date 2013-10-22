@@ -28,7 +28,6 @@ class Player(object):
         while True:
             message = bus.poll(gst.MESSAGE_EOS, timeout=0.01)
             if message:
-                print 'Track finished!'
                 self.stop()
             else:
                 break
@@ -61,8 +60,9 @@ class Player(object):
     def draw(self):
         self.progress_bar.fraction = (
             self.get_position() / self.get_duration())
-        with self.terminal.location(0, self.terminal.height - 1):
-            print self.progress_bar.draw(10),
+        prog_bar_width = self.terminal.width - 2
+        with self.terminal.location(1, self.terminal.height - 1):
+            print self.progress_bar.draw(prog_bar_width),
             sys.stdout.flush()
 
     def set_file(self, filepath):
@@ -70,12 +70,10 @@ class Player(object):
         self.gst_player.set_property('uri', 'file://{}'.format(filepath))
 
     def play(self):
-        print 'playing'
         self.gst_player.set_property('volume', 1)
         self.gst_player.set_state(gst.STATE_PLAYING)
 
     def stop(self):
-        print 'Stopping player gracefully'
         self.gst_player.set_state(gst.STATE_NULL)
         self.reactor.stop()
 
@@ -92,10 +90,12 @@ class Player(object):
         self.stop()
 
     def run(self):
-        signal.signal(signal.SIGINT, self._handle_sigint)
-        self.looping_call = task.LoopingCall(self.update)
-        self.looping_call.start(0.1)
-        self.reactor.run()
+        with self.terminal.fullscreen():
+            with self.terminal.hidden_cursor():
+                signal.signal(signal.SIGINT, self._handle_sigint)
+                self.looping_call = task.LoopingCall(self.update)
+                self.looping_call.start(0.1)
+                self.reactor.run()
 
 
 class ProgressBar(object):
@@ -104,6 +104,7 @@ class ProgressBar(object):
         self._prog_chars = ['-', '=']
 
     def draw(self, width):
+        width -= 2
         chars = [' '] * width
         filled = self.fraction * width
         over = filled - int(filled)
