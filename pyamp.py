@@ -3,6 +3,7 @@ from __future__ import division
 
 import sys
 import os
+import signal
 import time
 
 import blessings
@@ -11,18 +12,24 @@ import pygst
 pygst.require('0.10')
 import gst
 
+from twisted.internet import reactor, task
+
 
 class Player(object):
-    def __init__(self):
+    def __init__(self, reactor=reactor):
+        self.reactor = reactor
         self.gst_player = gst.element_factory_make('playbin2', 'player')
 
-    def handle_messages(self):
+        self.progress_bar = ProgressBar()
+        self.terminal = blessings.Terminal()
+
+    def _handle_messages(self):
         bus = self.gst_player.get_bus()
         while True:
-            message = bus.poll(gst.MESSAGE_EOS, timeout=0.1)
+            message = bus.poll(gst.MESSAGE_EOS, timeout=0.01)
             if message:
+                print 'Track finished!'
                 self.stop()
-                raise StopIteration('Finished playing!')
             else:
                 break
 
@@ -46,9 +53,20 @@ class Player(object):
             return
         return position / 1e9
 
+    def update(self):
+        self._handle_messages()
+        if self.gst_player.get_state()[1] == gst.STATE_PLAYING:
+            self.draw()
+
+    def draw(self):
+        self.progress_bar.fraction = (
+            self.get_position() / self.get_duration())
+        with self.terminal.location(0, self.terminal.height - 1):
+            print self.progress_bar.draw(10),
+            sys.stdout.flush()
+
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
-        print 'setting filepath', filepath
         self.gst_player.set_property('uri', 'file://{}'.format(filepath))
 
     def play(self):
@@ -57,12 +75,27 @@ class Player(object):
         self.gst_player.set_state(gst.STATE_PLAYING)
 
     def stop(self):
+        print 'Stopping player gracefully'
+        self.gst_player.set_state(gst.STATE_NULL)
+        self.reactor.stop()
+
+    def fade_out(self, duration=0.33):
+        # FIXME: this shouldn't block!
         steps = 66
-        step_time = 0.33 / steps
+        step_time = duration / steps
         for i in range(steps, -1, -1):
             self.gst_player.set_property('volume', i / steps)
             time.sleep(step_time)
-        self.gst_player.set_state(gst.STATE_NULL)
+
+    def _handle_sigint(self, signal, frame):
+        self.fade_out()
+        self.stop()
+
+    def run(self):
+        signal.signal(signal.SIGINT, self._handle_sigint)
+        self.looping_call = task.LoopingCall(self.update)
+        self.looping_call.start(0.1)
+        self.reactor.run()
 
 
 class ProgressBar(object):
@@ -82,21 +115,7 @@ class ProgressBar(object):
 
 
 if __name__ == '__main__':
-    term = blessings.Terminal()
-    prog = ProgressBar()
     p = Player()
     p.set_file(sys.argv[1])
     p.play()
-    try:
-        while p.gst_player.get_state()[1] == gst.STATE_PLAYING:
-            p.handle_messages()
-            prog.fraction = p.get_position() / p.get_duration()
-            with term.location(0, term.height - 1):
-                print prog.draw(10),
-                sys.stdout.flush()
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        print 'Stopping player gracefully'
-        p.stop()
-    except StopIteration:
-        print 'Track finished'
+    p.run()
