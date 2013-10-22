@@ -1,4 +1,6 @@
 #! /usr/bin/env python
+from __future__ import division
+
 import sys
 import os
 import time
@@ -51,9 +53,15 @@ class Player(object):
 
     def play(self):
         print 'playing'
+        self.gst_player.set_property('volume', 1)
         self.gst_player.set_state(gst.STATE_PLAYING)
 
     def stop(self):
+        steps = 66
+        step_time = 0.33 / steps
+        for i in range(steps, -1, -1):
+            self.gst_player.set_property('volume', i / steps)
+            time.sleep(step_time)
         self.gst_player.set_state(gst.STATE_NULL)
 
 
