@@ -5,14 +5,17 @@ import sys
 import os
 import signal
 import time
+from contextlib import contextmanager
 
 import blessings
+import termios
+import tty
 
 import pygst
 pygst.require('0.10')
 import gst
 
-from twisted.internet import reactor, task
+from twisted.internet import reactor, task, protocol, stdio
 
 
 class Player(object):
@@ -21,7 +24,7 @@ class Player(object):
         self.gst_player = gst.element_factory_make('playbin2', 'player')
 
         self.progress_bar = ProgressBar()
-        self.terminal = blessings.Terminal()
+        self.terminal = Terminal()
 
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
@@ -63,7 +66,7 @@ class Player(object):
         prog_bar_width = self.terminal.width - 2
         with self.terminal.location(1, self.terminal.height - 1):
             print self.progress_bar.draw(prog_bar_width),
-            sys.stdout.flush()
+        sys.stdout.flush()
 
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
@@ -92,10 +95,12 @@ class Player(object):
     def run(self):
         with self.terminal.fullscreen():
             with self.terminal.hidden_cursor():
-                signal.signal(signal.SIGINT, self._handle_sigint)
-                self.looping_call = task.LoopingCall(self.update)
-                self.looping_call.start(0.1)
-                self.reactor.run()
+                with self.terminal.unbuffered_input():
+                    signal.signal(signal.SIGINT, self._handle_sigint)
+                    self.looping_call = task.LoopingCall(self.update)
+                    self.looping_call.start(0.1)
+                    stdio.StandardIO(InputReader())
+                    self.reactor.run()
 
 
 class ProgressBar(object):
@@ -113,6 +118,26 @@ class ProgressBar(object):
         final_char = self._prog_chars[int(over * len(self._prog_chars))]
         chars[filled] = final_char
         return '[{}]'.format(''.join(chars))
+
+
+class InputReader(protocol.Protocol):
+    def dataReceived(self, data):
+        print 'data:', data
+
+
+class Terminal(blessings.Terminal):
+    @contextmanager
+    def unbuffered_input(self):
+        if self.is_a_tty:
+            orig_tty_attrs = termios.tcgetattr(self.stream)
+            tty.setcbreak(self.stream)
+            try:
+                yield
+            finally:
+                termios.tcsetattr(
+                    self.stream, termios.TCSADRAIN, orig_tty_attrs)
+        else:
+            yield
 
 
 if __name__ == '__main__':
