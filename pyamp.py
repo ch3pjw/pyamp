@@ -19,16 +19,8 @@ from twisted.internet import reactor, task, protocol, stdio
 
 
 class Player(object):
-    def __init__(self, reactor=reactor):
-        self.reactor = reactor
+    def __init__(self):
         self.gst_player = gst.element_factory_make('playbin2', 'player')
-
-        self.progress_bar = ProgressBar()
-        self.terminal = Terminal()
-
-        self.key_map = {
-            'q': self.quit,
-            ' ': self.pause}
 
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
@@ -36,6 +28,7 @@ class Player(object):
             message = bus.poll(gst.MESSAGE_EOS, timeout=0.01)
             if message:
                 self.stop()
+                raise StopIteration('Track finished successfully!')
             else:
                 break
 
@@ -60,6 +53,10 @@ class Player(object):
         return position / 1e9
 
     @property
+    def playing(self):
+        return self.state == gst.STATE_PLAYING
+
+    @property
     def state(self):
         '''We define our own getter for state because we don't continually want
         to be doing index lookups or tuple unpacking on the result of the one
@@ -76,16 +73,6 @@ class Player(object):
 
     def update(self):
         self._handle_messages()
-        if self.state == gst.STATE_PLAYING:
-            self.draw()
-
-    def draw(self):
-        self.progress_bar.fraction = (
-            self.get_position() / self.get_duration())
-        prog_bar_width = self.terminal.width - 2
-        with self.terminal.location(1, self.terminal.height - 1):
-            print self.progress_bar.draw(prog_bar_width),
-        sys.stdout.flush()
 
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
@@ -103,7 +90,6 @@ class Player(object):
 
     def stop(self):
         self.gst_player.set_state(gst.STATE_NULL)
-        self.reactor.stop()
 
     def fade_out(self, duration=0.33):
         # FIXME: this shouldn't block!
@@ -113,6 +99,33 @@ class Player(object):
             self.gst_player.set_property('volume', i / steps)
             time.sleep(step_time)
 
+
+class UI(object):
+    def __init__(self, reactor=reactor):
+        self.reactor = reactor
+        self.player = Player()
+        self.progress_bar = ProgressBar()
+        self.terminal = Terminal()
+        self.key_map = {
+            'q': self.quit,
+            ' ': self.player.pause}
+
+    def update(self):
+        try:
+            self.player.update()
+        except StopIteration:
+            self.quit()
+        if self.player.playing:
+            self.draw()
+
+    def draw(self):
+        self.progress_bar.fraction = (
+            self.player.get_position() / self.player.get_duration())
+        prog_bar_width = self.terminal.width - 2
+        with self.terminal.location(1, self.terminal.height - 1):
+            print self.progress_bar.draw(prog_bar_width),
+        sys.stdout.flush()
+
     def _handle_sigint(self, signal, frame):
         self.quit()
 
@@ -121,8 +134,10 @@ class Player(object):
         action()
 
     def quit(self):
-        self.fade_out()
-        self.stop()
+        if self.player.playing:
+            self.player.fade_out()
+            self.player.stop()
+        self.reactor.stop()
 
     def run(self):
         with self.terminal.fullscreen():
@@ -177,7 +192,7 @@ class Terminal(blessings.Terminal):
 
 
 if __name__ == '__main__':
-    p = Player()
-    p.set_file(sys.argv[1])
-    p.play()
-    p.run()
+    interface = UI()
+    interface.player.set_file(sys.argv[1])
+    interface.player.play()
+    interface.run()
