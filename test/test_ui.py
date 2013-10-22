@@ -38,3 +38,14 @@ class TestUIElements(TestCase):
         fill3 = Fill('3')
         horizontal_container.add_element(fill3, weight=2)
         self.assertEqual(horizontal_container.draw(10, 1), '11 22 3333')
+        horizontal_container.remove_element(fill3)
+        self.assertEqual(horizontal_container.draw(3, 1), '1 2')
+        fill4 = Fill('4')
+        fill4.max_width = 2
+        horizontal_container.add_element(fill4)
+        self.assertEqual(horizontal_container.draw(10, 1), '111 222 44')
+        self.assertEqual(horizontal_container.draw(5, 1), '1 2 4')
+        fill4.max_width = None
+        fill4.min_width = 3
+        self.assertEqual(horizontal_container.draw(7, 1), '1 2 444')
+        self.assertEqual(horizontal_container.draw(14, 1), '1111 2222 4444')

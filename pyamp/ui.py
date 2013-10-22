@@ -16,6 +16,14 @@ class ABCUIElement(object):
     max_height = abstractproperty()
 
     @property
+    def width_constrained(self):
+        return any((self.min_width, self.max_width))
+
+    @property
+    def height_constrained(self):
+        return any((self.min_height, self.max_height))
+
+    @property
     def fixed_width(self):
         return (
             self.min_width is not None and
@@ -55,6 +63,7 @@ class HorizontalContainer(ABCUIElement):
 
     def __init__(self, elements):
         self._contents = []
+        self._total_weight = 0
         for element in elements:
             self.add_element(element)
 
@@ -88,26 +97,34 @@ class HorizontalContainer(ABCUIElement):
     def add_element(self, element, weight=1):
         item = ContainerItem(element, weight)
         self._contents.append(item)
+        self._total_weight += weight
 
     def remove_element(self, element):
         for i, item in enumerate(self._contents):
             if item.element is element:
                 del self._contents[i]
+                self._total_weight -= item.weight
                 break
 
     def draw(self, width, height):
         allocated_width = len(self._contents) - 1
-        for item in self._items_with_max_width:
-            item.size = clamp(
-                width,
-                item.element.min_width,
-                item.element.max_width)
-            allocated_width += item.size
-        total_weight = sum(i.weight for i in self._items_without_max_width)
-        for i in self._items_without_max_width:
-            weighted_width = (
-                (width - allocated_width) * i.weight / total_weight)
-            i.size = weighted_width
+        total_unconstrained_weight = 0
+        for item in self._contents:
+            if item.element.width_constrained:
+                weighted_width = width * item.weight / self._total_weight
+                item.size = clamp(
+                    weighted_width,
+                    item.element.min_width,
+                    item.element.max_width)
+                allocated_width += item.size
+            else:
+                total_unconstrained_weight += item.weight
+        for item in self._contents:
+            if not item.element.width_constrained:
+                weighted_width = (
+                    (width - allocated_width) *
+                    item.weight / total_unconstrained_weight)
+                item.size = weighted_width
         return ' '.join(i.element.draw(i.size, height) for i in self._contents)
 
 
