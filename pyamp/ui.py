@@ -73,26 +73,18 @@ class HorizontalContainer(ABCUIElement):
 
     @property
     def min_width(self):
-        return sum(e.min_width for e in self) + len(self._contents) - 1
+        return (
+            sum(e.min_width for e in self if e.min_width is not None) +
+            len(self._contents) - 1)
 
     @property
     def max_width(self):
         if any(e.max_width is None for e in self):
             return
         else:
-            return sum(i.element.max_width for i in self._items_with_max_width)
-
-    @property
-    def _items_with_max_width(self):
-        for item in self._contents:
-            if item.element.max_width is not None:
-                yield item
-
-    @property
-    def _items_without_max_width(self):
-        for item in self._contents:
-            if item.element.max_width is None:
-                yield item
+            return (
+                sum(e.max_width for e in self if e.max_width is not None) +
+                len(self._contents) - 1)
 
     def add_element(self, element, weight=1):
         item = ContainerItem(element, weight)
