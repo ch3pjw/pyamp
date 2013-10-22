@@ -2,3 +2,4 @@
 *.ogg
 .*.swp
 *.pyc
+*.egg-info
