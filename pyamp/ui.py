@@ -2,8 +2,8 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 
 
 def clamp(value, min_=None, max_=None):
-    min_ = min_ or value
-    max_ = max_ or value
+    min_ = min_ or min(value, max_)
+    max_ = max_ or max(value, min_)
     return sorted((value, min_, max_))[1]
 
 
@@ -27,6 +27,19 @@ class ABCUIElement(object):
         '''Returns a string that can be output to the console to represent the
         UI element.
         '''
+
+
+class Fill(ABCUIElement):
+    min_width = None
+    max_width = None
+    min_height = None
+    max_height = None
+
+    def __init__(self, char='.'):
+        self.char = char
+
+    def draw(self, width, height):
+        return '\n'.join([self.char * width] * height)
 
 
 class ContainerItem(object):
