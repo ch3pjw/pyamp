@@ -24,4 +24,6 @@ setup(
         'blessings'],
     packages=[
         'pyamp'],
+    extras_require={
+        'development': ['pep8']}
 )
