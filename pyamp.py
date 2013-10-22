@@ -17,6 +17,8 @@ import gst
 
 from twisted.internet import reactor, task, protocol, stdio
 
+from ui import HorizontalContainer, ProgressBar, TimeCheck
+
 
 class Player(object):
     def __init__(self):
@@ -106,6 +108,8 @@ class UI(object):
         self.player = Player()
         self.progress_bar = ProgressBar()
         self.time_check = TimeCheck()
+        self.status_bar = HorizontalContainer(
+            (self.progress_bar, self.time_check))
         self.terminal = Terminal()
         self.key_map = {
             'q': self.quit,
@@ -125,12 +129,9 @@ class UI(object):
         self.progress_bar.fraction = position / duration
         self.time_check.position = position
         self.time_check.duration = duration
-        total_width = self.terminal.width - 3
-        time_check = self.time_check.draw()
-        prog_bar_width = total_width - len(time_check)
-        progress_bar = self.progress_bar.draw(prog_bar_width)
+        total_width = self.terminal.width - 2
         with self.terminal.location(1, self.terminal.height - 1):
-            print ' '.join((progress_bar, time_check)),
+            print self.status_bar.draw(total_width, 1),
         sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
@@ -155,32 +156,6 @@ class UI(object):
                     self.looping_call.start(0.1)
                     stdio.StandardIO(InputReader(self))
                     self.reactor.run()
-
-
-class ProgressBar(object):
-    def __init__(self):
-        self.fraction = 0
-        self._prog_chars = ['-', '=']
-
-    def draw(self, width):
-        width -= 2
-        chars = [' '] * width
-        filled = self.fraction * width
-        over = filled - int(filled)
-        filled = int(filled)
-        chars[:filled] = self._prog_chars[-1] * filled
-        final_char = self._prog_chars[int(over * len(self._prog_chars))]
-        chars[filled] = final_char
-        return '[{}]'.format(''.join(chars))
-
-
-class TimeCheck(object):
-    def __init__(self):
-        self.position = 0
-        self.duration = 0
-
-    def draw(self):
-        return '{:.1f}/{:.1f}'.format(self.position, self.duration)
 
 
 class InputReader(protocol.Protocol):
