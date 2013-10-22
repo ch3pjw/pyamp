@@ -105,6 +105,7 @@ class UI(object):
         self.reactor = reactor
         self.player = Player()
         self.progress_bar = ProgressBar()
+        self.time_check = TimeCheck()
         self.terminal = Terminal()
         self.key_map = {
             'q': self.quit,
@@ -119,11 +120,17 @@ class UI(object):
             self.draw()
 
     def draw(self):
-        self.progress_bar.fraction = (
-            self.player.get_position() / self.player.get_duration())
-        prog_bar_width = self.terminal.width - 2
+        position = self.player.get_position()
+        duration = self.player.get_duration()
+        self.progress_bar.fraction = position / duration
+        self.time_check.position = position
+        self.time_check.duration = duration
+        total_width = self.terminal.width - 3
+        time_check = self.time_check.draw()
+        prog_bar_width = total_width - len(time_check)
+        progress_bar = self.progress_bar.draw(prog_bar_width)
         with self.terminal.location(1, self.terminal.height - 1):
-            print self.progress_bar.draw(prog_bar_width),
+            print ' '.join((progress_bar, time_check)),
         sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
@@ -165,6 +172,15 @@ class ProgressBar(object):
         final_char = self._prog_chars[int(over * len(self._prog_chars))]
         chars[filled] = final_char
         return '[{}]'.format(''.join(chars))
+
+
+class TimeCheck(object):
+    def __init__(self):
+        self.position = 0
+        self.duration = 0
+
+    def draw(self):
+        return '{:.1f}/{:.1f}'.format(self.position, self.duration)
 
 
 class InputReader(protocol.Protocol):
