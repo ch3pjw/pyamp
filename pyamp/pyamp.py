@@ -23,6 +23,7 @@ from ui import HorizontalContainer, ProgressBar, TimeCheck
 class Player(object):
     def __init__(self):
         self.gst_player = gst.element_factory_make('playbin2', 'player')
+        self.tags = {'title': ''}
 
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
@@ -32,6 +33,8 @@ class Player(object):
                 if message.type == gst.MESSAGE_EOS:
                     self.stop()
                     raise StopIteration('Track finished successfully!')
+                if message.type == gst.MESSAGE_TAG:
+                    self.tags.update(message.parse_tag())
             else:
                 break
 
@@ -132,8 +135,10 @@ class UI(object):
             self.time_check.position = position
             self.time_check.duration = duration
         total_width = self.terminal.width - 2
-        with self.terminal.location(1, self.terminal.height - 1):
-            print self.status_bar.draw(total_width, 1),
+        with self.terminal.location(0, self.terminal.height - 2):
+            print self.player.tags['title'].center(self.terminal.width)
+            print self.status_bar.draw(total_width, 1).center(
+                self.terminal.width),
         sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
