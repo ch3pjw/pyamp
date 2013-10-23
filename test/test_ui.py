@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from pyamp.ui import clamp, Fill, HorizontalContainer
+from pyamp.ui import clamp, Fill, HorizontalContainer, ProgressBar
 
 
 class TestClamp(TestCase):
@@ -79,3 +79,13 @@ class TestUIElements(TestCase):
         self.assertEqual(horizontal_container.min_width, 8)
         fill2.min_width = 34
         self.assertEqual(horizontal_container.min_width, 42)
+
+    def test_progress_bar(self):
+        progress_bar = ProgressBar()
+        self.assertEqual(progress_bar.draw(3, 1), '[ ]')
+        progress_bar.fraction = 0.5
+        self.assertEqual(progress_bar.draw(10, 1), '[====    ]')
+        progress_bar.fraction = 0.45
+        self.assertEqual(progress_bar.draw(9, 1), '[===-   ]')
+        progress_bar.fraction = 1
+        self.assertEqual(progress_bar.draw(9, 1), '[=======]')

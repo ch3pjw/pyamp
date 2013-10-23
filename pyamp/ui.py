@@ -128,7 +128,7 @@ class ProgressBar(ABCUIElement):
 
     def __init__(self):
         self.fraction = 0
-        self._prog_chars = ['-', '=']
+        self._prog_chars = '-='
 
     def draw(self, width, height):
         width -= 2
@@ -137,8 +137,9 @@ class ProgressBar(ABCUIElement):
         over = filled - int(filled)
         filled = int(filled)
         chars[:filled] = self._prog_chars[-1] * filled
-        final_char = self._prog_chars[int(over * len(self._prog_chars))]
-        chars[filled] = final_char
+        if over:
+            final_char = self._prog_chars[int(over * len(self._prog_chars))]
+            chars[filled] = final_char
         return '[{}]'.format(''.join(chars))
 
 
