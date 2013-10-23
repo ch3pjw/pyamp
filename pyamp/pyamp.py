@@ -27,10 +27,11 @@ class Player(object):
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
         while True:
-            message = bus.poll(gst.MESSAGE_EOS, timeout=0.01)
+            message = bus.poll(gst.MESSAGE_ANY, timeout=0.01)
             if message:
-                self.stop()
-                raise StopIteration('Track finished successfully!')
+                if message.type == gst.MESSAGE_EOS:
+                    self.stop()
+                    raise StopIteration('Track finished successfully!')
             else:
                 break
 
