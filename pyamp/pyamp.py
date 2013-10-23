@@ -189,8 +189,11 @@ class Terminal(blessings.Terminal):
             yield
 
 
-if __name__ == '__main__':
+def main():
     interface = UI()
     interface.player.set_file(sys.argv[1])
     interface.player.play()
     interface.run()
+
+if __name__ == '__main__':
+    main()
