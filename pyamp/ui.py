@@ -1,10 +1,32 @@
+from __future__ import division
+
 from abc import ABCMeta, abstractmethod, abstractproperty
+from itertools import cycle
 
 
 def clamp(value, min_=None, max_=None):
     min_ = min_ or min(value, max_)
     max_ = max_ or max(value, min_)
     return sorted((value, min_, max_))[1]
+
+
+def weighted_round_robin(iterable):
+    '''Takes an iterable of tuples of <item>, <weight> and cycles around them,
+    returning heavier (integer) weighted items more frequently.
+    '''
+    cyclable_list = []
+    assigned_weight = 0
+    still_to_process = [
+        (item, weight) for item, weight in
+        sorted(iterable, key=lambda tup: tup[1], reverse=True)]
+    while still_to_process:
+        for i, (item, weight) in enumerate(still_to_process):
+            if weight > assigned_weight:
+                cyclable_list.append(item)
+            else:
+                del still_to_process[i]
+        assigned_weight += 1
+    return cycle(cyclable_list)
 
 
 class ABCUIElement(object):
@@ -100,23 +122,23 @@ class HorizontalContainer(ABCUIElement):
 
     def draw(self, width, height):
         allocated_width = len(self._contents) - 1
-        total_unconstrained_weight = 0
         for item in self._contents:
-            if item.element.width_constrained:
-                weighted_width = width * item.weight / self._total_weight
-                item.size = clamp(
-                    weighted_width,
-                    item.element.min_width,
-                    item.element.max_width)
-                allocated_width += item.size
-            else:
-                total_unconstrained_weight += item.weight
-        for item in self._contents:
-            if not item.element.width_constrained:
-                weighted_width = (
-                    (width - allocated_width) *
-                    item.weight / total_unconstrained_weight)
-                item.size = weighted_width
+            item.size = item.element.min_width or 0
+            item._round_robin_additions_to_ignore = item.size
+            allocated_width += item.size
+        weighted_items = [(item, item.weight) for item in self._contents]
+        for item in weighted_round_robin(weighted_items):
+            if (item.element.max_width is None or
+                    item.size < item.element.max_width):
+                if not getattr(item, '_round_robin_additions_to_ignore', None):
+                    item.size += 1
+                    allocated_width += 1
+                else:
+                    item._round_robin_additions_to_ignore -= 1
+                    if item._round_robin_additions_to_ignore == 0:
+                        del item._round_robin_additions_to_ignore
+            if allocated_width >= width:
+                break
         return ' '.join(i.element.draw(i.size, height) for i in self._contents)
 
 

@@ -1,9 +1,10 @@
 from unittest import TestCase
 
-from pyamp.ui import clamp, Fill, HorizontalContainer, ProgressBar
+from pyamp.ui import (
+    clamp, weighted_round_robin, Fill, HorizontalContainer, ProgressBar)
 
 
-class TestClamp(TestCase):
+class TestHelpers(TestCase):
     def test_clamp_values(self):
         self.assertEqual(clamp(1, 2, 3), 2)
         self.assertEqual(clamp(4, 3, 5), 4)
@@ -16,6 +17,13 @@ class TestClamp(TestCase):
         self.assertEqual(clamp(-121, min_=13), 13)
         self.assertEqual(clamp(121, max_=13), 13)
         self.assertEqual(clamp(-121, max_=13), -121)
+
+    def test_weighted_round_robin(self):
+        test_data = [('a', 3), ('b', 1), ('c', 2)]
+        result = [
+            val for val, _ in zip(weighted_round_robin(test_data), xrange(12))]
+        expected = ['a', 'c', 'b', 'a', 'c', 'a'] * 2
+        self.assertEqual(result, expected)
 
 
 class TestUIElements(TestCase):
@@ -61,6 +69,8 @@ class TestUIElements(TestCase):
         horizontal_container.remove_element(fill2)
         self.assertEqual(horizontal_container.draw(7, 1), '1 44444')
         self.assertEqual(horizontal_container.draw(14, 1), '11111111 44444')
+        fill1.min_width = 3
+        self.assertEqual(horizontal_container.draw(9, 1), '111 44444')
 
     def test_horizontal_container_max_width(self):
         fill1 = Fill('1')
