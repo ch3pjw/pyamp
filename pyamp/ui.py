@@ -77,6 +77,8 @@ class ContainerItem(object):
         self.element = element
         self.weight = weight
         self.size = size
+        # FIXME: This is a bit of a nasty hack to help draw the container:
+        self._round_robin_additions_to_ignore = 0
 
 
 class HorizontalContainer(ABCUIElement):
@@ -85,9 +87,10 @@ class HorizontalContainer(ABCUIElement):
 
     def __init__(self, elements):
         self._contents = []
-        self._total_weight = 0
         for element in elements:
             self.add_element(element)
+        self._prev_width = None
+        self._elements_updated = False
 
     def __iter__(self):
         for item in self._contents:
@@ -111,16 +114,21 @@ class HorizontalContainer(ABCUIElement):
     def add_element(self, element, weight=1):
         item = ContainerItem(element, weight)
         self._contents.append(item)
-        self._total_weight += weight
+        self._elements_updated = True
 
     def remove_element(self, element):
         for i, item in enumerate(self._contents):
             if item.element is element:
                 del self._contents[i]
-                self._total_weight -= item.weight
                 break
+        self._elements_updated = True
 
-    def draw(self, width, height):
+    def _recalculate_element_sizes(self, width):
+        '''The basic approach to working out the sizes of our elements is to
+        start with each element at its minimum size and then to round-robin
+        between the expandable elements in a weighted fashion, expanding them
+        until the space is full.
+        '''
         allocated_width = len(self._contents) - 1
         for item in self._contents:
             item.size = item.element.min_width or 0
@@ -130,15 +138,22 @@ class HorizontalContainer(ABCUIElement):
         for item in weighted_round_robin(weighted_items):
             if (item.element.max_width is None or
                     item.size < item.element.max_width):
-                if not getattr(item, '_round_robin_additions_to_ignore', None):
+                if item._round_robin_additions_to_ignore:
+                    item._round_robin_additions_to_ignore -= 1
+                else:
                     item.size += 1
                     allocated_width += 1
-                else:
-                    item._round_robin_additions_to_ignore -= 1
-                    if item._round_robin_additions_to_ignore == 0:
-                        del item._round_robin_additions_to_ignore
             if allocated_width >= width:
                 break
+        self._elements_updated = False
+        self._prev_width = width
+
+    def draw(self, width, height):
+        '''Draws all the elements in this container, recalculating all their
+        sizes if necessary.
+        '''
+        if width != self._prev_width or self._elements_updated:
+            self._recalculate_element_sizes(width)
         return ' '.join(i.element.draw(i.size, height) for i in self._contents)
 
 
