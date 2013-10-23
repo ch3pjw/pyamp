@@ -189,16 +189,20 @@ class TimeCheck(ABCUIElement):
         self.duration = 0
 
     @property
-    def width(self):
-        return len(self.draw(0, 0))
-
-    @property
     def min_width(self):
-        return self.width
+        return len(self._get_short_string())
 
     @property
     def max_width(self):
-        return self.width
+        return len(self._get_long_string())
+
+    def _get_short_string(self):
+        return '{:.1f}'.format(self.position)
+
+    def _get_long_string(self):
+        return '{:.1f}/{:.1f}'.format(self.position, self.duration)
 
     def draw(self, width, height):
-        return '{:.1f}/{:.1f}'.format(self.position, self.duration)
+        if width < self.max_width:
+            return self._get_short_string()
+        return self._get_long_string()
