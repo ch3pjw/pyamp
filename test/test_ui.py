@@ -1,4 +1,5 @@
 from unittest import TestCase
+from mock import patch
 
 from pyamp.ui import (
     clamp, weighted_round_robin, Fill, HorizontalContainer, ProgressBar)
@@ -71,6 +72,28 @@ class TestUIElements(TestCase):
         self.assertEqual(horizontal_container.draw(14, 1), '11111111 44444')
         fill1.min_width = 3
         self.assertEqual(horizontal_container.draw(9, 1), '111 44444')
+
+    def test_horizontal_container_size_calculation_on_demand(self):
+        fill1 = Fill()
+        horizontal_container = HorizontalContainer([fill1])
+        original_recalc = horizontal_container._recalculate_element_sizes
+        patcher = patch(
+            'pyamp.ui.HorizontalContainer._recalculate_element_sizes')
+        recalc_mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        recalc_mock.side_effect = original_recalc
+        horizontal_container.draw(3, 1)
+        self.assertEqual(recalc_mock.call_count, 1)
+        horizontal_container.draw(3, 1)
+        self.assertEqual(recalc_mock.call_count, 1)
+        horizontal_container.draw(4, 1)
+        self.assertEqual(recalc_mock.call_count, 2)
+        fill2 = Fill()
+        horizontal_container.add_element(fill2)
+        horizontal_container.draw(4, 1)
+        self.assertEqual(recalc_mock.call_count, 3)
+        horizontal_container.draw(4, 1)
+        self.assertEqual(recalc_mock.call_count, 3)
 
     def test_horizontal_container_max_width(self):
         fill1 = Fill('1')

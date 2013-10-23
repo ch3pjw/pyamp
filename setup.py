@@ -25,5 +25,5 @@ setup(
     packages=[
         'pyamp'],
     extras_require={
-        'development': ['pep8']}
+        'development': ['pep8', 'mock']}
 )
