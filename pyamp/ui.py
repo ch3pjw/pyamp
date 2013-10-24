@@ -163,13 +163,18 @@ class ProgressBar(ABCUIElement):
     min_height = 1
     max_height = 1
 
-    def __init__(self, prog_chars='-='):
+    def __init__(self, chars=None):
+        if not chars or len(chars) < 4:
+            chars = '[ -=]'
+        self._start_cap = chars[0]
+        self._end_cap = chars[-1]
+        self._bg_char = chars[1]
+        self._prog_chars = chars[2:-1]
         self.fraction = 0
-        self._prog_chars = prog_chars
 
     def draw(self, width, height):
         width -= 2
-        chars = [' '] * width
+        chars = [self._bg_char] * width
         filled = self.fraction * width
         over = filled - int(filled)
         filled = int(filled)
@@ -177,7 +182,8 @@ class ProgressBar(ABCUIElement):
         if over:
             final_char = self._prog_chars[int(over * len(self._prog_chars))]
             chars[filled] = final_char
-        return u'[{}]'.format(u''.join(chars))
+        return u'{}{}{}'.format(
+            self._start_cap, u''.join(chars), self._end_cap)
 
 
 class TimeCheck(ABCUIElement):

@@ -1,5 +1,5 @@
 appearance:
-    prog_chars: ▏▎▍▌▋▊▉█
+    progress_bar: '[ ▏▎▍▌▋▊▉█]'
 keymap:
     play_pause: space
     volume_up: ^

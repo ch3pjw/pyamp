@@ -113,7 +113,7 @@ class UI(object):
         self.reactor = reactor
         self.player = Player()
         self.progress_bar = ProgressBar(
-            prog_chars=self.user_config.appearance.prog_chars)
+            self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
         self.status_bar = HorizontalContainer(
             (self.progress_bar, self.time_check))
