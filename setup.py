@@ -21,9 +21,12 @@ setup(
     version=__version__,
     install_requires=[
         'Twisted',
-        'blessings'],
+        'blessings',
+        'pyyaml'],
     packages=[
         'pyamp'],
+    package_data={
+        'pyamp': ['default.pyamp']},
     entry_points={
         'console_scripts': ['pyamp = pyamp.pyamp:main']},
     extras_require={
