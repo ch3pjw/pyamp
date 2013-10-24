@@ -60,7 +60,8 @@ class TestUserConfig(TestCase):
         user_config = UserConfig(self.default_config_data)
         self.assertEqual(
             dir(user_config),
-            ['blasters', 'clean_trousers', 'engines', 'pilot', 'shields'])
+            sorted(dir(UserConfig) + [
+                'blasters', 'clean_trousers', 'engines', 'pilot', 'shields']))
 
     def test_eq(self):
         config1 = UserConfig(self.default_config_data)

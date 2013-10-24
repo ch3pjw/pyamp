@@ -22,7 +22,7 @@ class UserConfig(object):
             return data
 
     def __dir__(self):
-        return sorted(self._data.keys())
+        return sorted(dir(self.__class__) + self._data.keys())
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
