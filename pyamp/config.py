@@ -13,12 +13,22 @@ class UserConfig(object):
 
     def __getattr__(self, name):
         try:
-            return self.__class__(self._data[name])
+            data = self._data[name]
         except KeyError as e:
             raise AttributeError(e.message)
+        if isinstance(data, collections.Mapping):
+            return self.__class__(data)
+        else:
+            return data
 
     def __dir__(self):
-        return self._data.keys()
+        return sorted(self._data.keys())
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self._data == other._data
+        else:
+            return self._data == other
 
     def update(self, new):
         '''Recursively update current data with data from another UserConfig
