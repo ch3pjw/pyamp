@@ -21,6 +21,7 @@ class TestUserConfig(TestCase):
                 'back': 'middling',
             },
             'pilot': 'Luke',
+            'clean_trousers': 1,
         }
         self.latest_config_data = {
             'blasters': True,
@@ -34,6 +35,7 @@ class TestUserConfig(TestCase):
                 'front': 'knackered',
                 'sides': 'yeah, we needed more',
             },
+            'clean_trousers': None
         }
 
     def test_attribute_lookup(self):
@@ -58,7 +60,7 @@ class TestUserConfig(TestCase):
         user_config = UserConfig(self.default_config_data)
         self.assertEqual(
             dir(user_config),
-            ['blasters', 'engines', 'pilot', 'shields'])
+            ['blasters', 'clean_trousers', 'engines', 'pilot', 'shields'])
 
     def test_eq(self):
         config1 = UserConfig(self.default_config_data)
@@ -90,3 +92,4 @@ class TestUserConfig(TestCase):
                 'sides': 'yeah, we needed more',
                 'back': 'middling'})
         self.assertEqual(default_config.pilot, 'Luke')
+        self.assertEqual(default_config.clean_trousers, 1)

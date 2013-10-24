@@ -40,6 +40,11 @@ class UserConfig(object):
         for key, value in new.iteritems():
             if isinstance(value, collections.Mapping):
                 existing[key] = self._update(existing.get(key, {}), value)
+            elif value is None:
+                # If the new data doesn't provide any information for a key
+                # that we had previously, then we don't want to nuke our
+                # existing data.
+                pass
             else:
                 existing[key] = new[key]
         return existing
