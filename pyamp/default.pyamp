@@ -1,5 +1,8 @@
 appearance:
     progress_bar: '[ -=]'
 keymap:
-    play_pause: space
-    volume_up: ^
+    play_pause: 'space'
+    volume_up:
+        - '='
+        - '+'
+    volume_down: '-'
