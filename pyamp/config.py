@@ -30,6 +30,10 @@ class UserConfig(object):
         else:
             return self._data == other
 
+    def __iter__(self):
+        for key in self._data:
+            yield key, getattr(self, key)
+
     def update(self, new):
         '''Recursively update current data with data from another UserConfig
         instance.
