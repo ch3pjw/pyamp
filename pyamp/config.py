@@ -4,13 +4,38 @@ import collections
 import yaml
 
 
-def update(existing, new):
-    for key, value in new.iteritems():
-        if isinstance(value, collections.Mapping):
-            existing[key] = update(existing.get(key, {}), value)
-        else:
-            existing[key] = new[key]
-    return existing
+class UserConfig(object):
+    '''Represents a nested data structure in a conventient, dotted-lookup
+    kinda way.
+    '''
+    def __init__(self, data):
+        self._data = data
+
+    def __getattr__(self, name):
+        try:
+            return self.__class__(self._data[name])
+        except KeyError as e:
+            raise AttributeError(e.message)
+
+    def __dir__(self):
+        return self._data.keys()
+
+    def update(self, new):
+        '''Recursively update current data with data from another UserConfig
+        instance.
+        '''
+        self._update(self._data, new._data)
+
+    def _update(self, existing, new):
+        for key, value in new.iteritems():
+            if isinstance(value, collections.Mapping):
+                existing[key] = self._update(existing.get(key, {}), value)
+            else:
+                existing[key] = new[key]
+        return existing
+
+    def __str__(self):
+        return yaml.dump(self._data, default_flow_style=False)
 
 
 def load_config():
@@ -20,10 +45,8 @@ def load_config():
     if not os.path.exists(user_config_file_path):
         shutil.copy2(default_config_file_path, user_config_file_path)
     with open(default_config_file_path) as fp:
-        default_config = yaml.load(fp)
+        default_config = UserConfig(yaml.load(fp))
     with open(user_config_file_path) as fp:
-        user_config = yaml.load(fp)
-    print default_config
-    print user_config
-    update(default_config, user_config)
-    print default_config
+        user_config = UserConfig(yaml.load(fp))
+    default_config.update(user_config)
+    return default_config
