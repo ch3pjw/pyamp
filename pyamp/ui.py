@@ -177,7 +177,7 @@ class ProgressBar(ABCUIElement):
         if over:
             final_char = self._prog_chars[int(over * len(self._prog_chars))]
             chars[filled] = final_char
-        return '[{}]'.format(''.join(chars))
+        return u'[{}]'.format(u''.join(chars))
 
 
 class TimeCheck(ABCUIElement):
