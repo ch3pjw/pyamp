@@ -17,6 +17,7 @@ import gst
 
 from twisted.internet import reactor, task, protocol, stdio
 
+from config import load_config
 from ui import HorizontalContainer, ProgressBar, TimeCheck
 
 
@@ -107,10 +108,12 @@ class Player(object):
 
 
 class UI(object):
-    def __init__(self, reactor=reactor):
+    def __init__(self, user_config, reactor=reactor):
+        self.user_config = user_config
         self.reactor = reactor
         self.player = Player()
-        self.progress_bar = ProgressBar()
+        self.progress_bar = ProgressBar(
+            prog_chars=self.user_config.appearance.prog_chars)
         self.time_check = TimeCheck()
         self.status_bar = HorizontalContainer(
             (self.progress_bar, self.time_check))
@@ -190,7 +193,8 @@ class Terminal(blessings.Terminal):
 
 
 def main():
-    interface = UI()
+    user_config = load_config()
+    interface = UI(user_config)
     interface.player.set_file(sys.argv[1])
     interface.player.play()
     interface.run()

@@ -163,9 +163,9 @@ class ProgressBar(ABCUIElement):
     min_height = 1
     max_height = 1
 
-    def __init__(self):
+    def __init__(self, prog_chars='-='):
         self.fraction = 0
-        self._prog_chars = '-='
+        self._prog_chars = prog_chars
 
     def draw(self, width, height):
         width -= 2
