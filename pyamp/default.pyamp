@@ -1,6 +1,6 @@
 appearance:
     progress_bar: '[ -=]'
-keymap:
+key_bindings:
     play_pause: 'space'
     volume_up:
         - '='

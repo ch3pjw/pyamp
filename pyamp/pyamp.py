@@ -18,6 +18,7 @@ import gst
 from twisted.internet import reactor, task, protocol, stdio
 
 from config import load_config
+from keyboard import Keyboard, bindable, is_bindable
 from ui import HorizontalContainer, ProgressBar, TimeCheck
 
 
@@ -86,16 +87,23 @@ class Player(object):
         filepath = os.path.abspath(filepath)
         self.gst_player.set_property('uri', 'file://{}'.format(filepath))
 
+    @bindable
     def play(self):
         self.gst_player.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
+    @bindable
     def pause(self):
-        if self.state == gst.STATE_PLAYING:
-            self.state = gst.STATE_PAUSED
-        else:
-            self.state = gst.STATE_PLAYING
+        self.state = gst.STATE_PAUSED
 
+    @bindable
+    def play_pause(self):
+        if self.playing:
+            self.pause()
+        else:
+            self.play()
+
+    @bindable
     def stop(self):
         self.gst_player.set_state(gst.STATE_NULL)
 
@@ -107,11 +115,13 @@ class Player(object):
             self.gst_player.set_property('volume', self.volume * (i / steps))
             time.sleep(step_time)
 
-    def vol_down(self):
+    @bindable
+    def volume_down(self):
         self.volume = self.volume - 0.001
         self.gst_player.set_property('volume', self.volume)
 
-    def vol_up(self):
+    @bindable
+    def volume_up(self):
         self.volume = self.volume + 0.001
         self.gst_player.set_property('volume', self.volume)
 
@@ -127,11 +137,26 @@ class UI(object):
         self.status_bar = HorizontalContainer(
             (self.progress_bar, self.time_check))
         self.terminal = Terminal()
-        self.key_map = {
-            'q': self.quit,
-            '^': self.player.vol_up,
-            'v': self.player.vol_down,
-            ' ': self.player.pause}
+        self.key_bindings = self._create_key_bindings()
+
+    def _create_bindable_funcs_map(self):
+        bindable_funcs = {}
+        for obj in self, self.player:
+            for name in dir(obj):
+                func = getattr(obj, name)
+                if is_bindable(func):
+                    bindable_funcs[name] = func
+        return bindable_funcs
+
+    def _create_key_bindings(self):
+        bindable_funcs = self._create_bindable_funcs_map()
+        key_bindings = {}
+        for func_name, keys in self.user_config.key_bindings:
+            if isinstance(keys, basestring):
+                keys = [keys]
+            for key in keys:
+                key_bindings[key] = bindable_funcs[func_name]
+        return key_bindings
 
     def update(self):
         try:
@@ -159,9 +184,10 @@ class UI(object):
         self.quit()
 
     def handle_input(self, char):
-        action = self.key_map.get(char, lambda: None)
+        action = self.key_bindings.get(char, lambda: None)
         action()
 
+    @bindable
     def quit(self):
         if self.player.playing:
             self.player.fade_out()
@@ -174,18 +200,19 @@ class UI(object):
                 with self.terminal.unbuffered_input():
                     signal.signal(signal.SIGINT, self._handle_sigint)
                     self.looping_call = task.LoopingCall(self.update)
-                    self.looping_call.start(0.1)
+                    self.looping_call.start(1 / 20)
                     stdio.StandardIO(InputReader(self))
                     self.reactor.run()
 
 
 class InputReader(protocol.Protocol):
-    def __init__(self, player):
-        self.player = player
+    def __init__(self, ui):
+        self.ui = ui
+        self.keyboard = Keyboard()
 
     def dataReceived(self, data):
-        for char in data:
-            self.player.handle_input(char)
+        key_name = self.keyboard[data]
+        self.ui.handle_input(key_name)
 
 
 class Terminal(blessings.Terminal):
