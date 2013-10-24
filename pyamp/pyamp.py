@@ -25,6 +25,7 @@ class Player(object):
     def __init__(self):
         self.gst_player = gst.element_factory_make('playbin2', 'player')
         self.tags = {'title': ''}
+        self.volume = 0.01
 
     def _handle_messages(self):
         bus = self.gst_player.get_bus()
@@ -86,7 +87,7 @@ class Player(object):
         self.gst_player.set_property('uri', 'file://{}'.format(filepath))
 
     def play(self):
-        self.gst_player.set_property('volume', 1)
+        self.gst_player.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     def pause(self):
@@ -103,8 +104,16 @@ class Player(object):
         steps = 66
         step_time = duration / steps
         for i in range(steps, -1, -1):
-            self.gst_player.set_property('volume', i / steps)
+            self.gst_player.set_property('volume', self.volume * (i / steps))
             time.sleep(step_time)
+
+    def vol_down(self):
+        self.volume = self.volume - 0.001
+        self.gst_player.set_property('volume', self.volume)
+
+    def vol_up(self):
+        self.volume = self.volume + 0.001
+        self.gst_player.set_property('volume', self.volume)
 
 
 class UI(object):
@@ -120,6 +129,8 @@ class UI(object):
         self.terminal = Terminal()
         self.key_map = {
             'q': self.quit,
+            '^': self.player.vol_up,
+            'v': self.player.vol_down,
             ' ': self.player.pause}
 
     def update(self):
