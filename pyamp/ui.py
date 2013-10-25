@@ -3,11 +3,7 @@ from __future__ import division
 from abc import ABCMeta, abstractmethod, abstractproperty
 from itertools import cycle
 
-
-def clamp(value, min_=None, max_=None):
-    min_ = min_ or min(value, max_)
-    max_ = max_ or max(value, min_)
-    return sorted((value, min_, max_))[1]
+from util import clamp
 
 
 def weighted_round_robin(iterable):

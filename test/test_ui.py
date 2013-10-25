@@ -3,23 +3,10 @@ from unittest import TestCase
 from mock import patch
 
 from pyamp.ui import (
-    clamp, weighted_round_robin, Fill, HorizontalContainer, ProgressBar)
+    weighted_round_robin, Fill, HorizontalContainer, ProgressBar)
 
 
 class TestHelpers(TestCase):
-    def test_clamp_values(self):
-        self.assertEqual(clamp(1, 2, 3), 2)
-        self.assertEqual(clamp(4, 3, 5), 4)
-        self.assertEqual(clamp(10, 8, 9), 9)
-
-    def test_clamp_unbounded(self):
-        self.assertEqual(clamp(42), 42)
-        self.assertEqual(clamp(-42), -42)
-        self.assertEqual(clamp(121, min_=13), 121)
-        self.assertEqual(clamp(-121, min_=13), 13)
-        self.assertEqual(clamp(121, max_=13), 13)
-        self.assertEqual(clamp(-121, max_=13), -121)
-
     def test_weighted_round_robin(self):
         test_data = [('a', 3), ('b', 1), ('c', 2)]
         result = [
