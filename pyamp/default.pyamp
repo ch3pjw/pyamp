@@ -6,3 +6,12 @@ key_bindings:
         - '='
         - '+'
     volume_down: '-'
+    seek_forward:
+        - '.'
+        - '>'
+    seek_backward:
+        - ','
+        - '<'
+system:
+    GST_DEBUG:
+    GST_DEBUG_FILE: 'gstreamer.log'

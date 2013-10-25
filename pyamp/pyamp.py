@@ -13,7 +13,8 @@ import tty
 
 import pygst
 pygst.require('0.10')
-import gst
+# The gst module needs to be imported after we've set up some environment
+gst = None
 
 from twisted.internet import reactor, task, protocol, stdio
 
@@ -24,6 +25,10 @@ from ui import HorizontalContainer, ProgressBar, TimeCheck
 
 class Player(object):
     def __init__(self):
+        # We're the only class that should be using gst, so we'll be
+        # responsible for importing it after the environment is set up
+        global gst
+        import gst
         self.gst_player = gst.element_factory_make('playbin2', 'player')
         self.tags = {'title': ''}
         self.volume = 0.01
@@ -232,6 +237,9 @@ class Terminal(blessings.Terminal):
 
 def main():
     user_config = load_config()
+    if user_config.system.GST_DEBUG:
+        os.environ['GST_DEBUG'] = user_config.system.GST_DEBUG
+        os.environ['GST_DEBUG_FILE'] = user_config.system.GST_DEBUG_FILE
     interface = UI(user_config)
     interface.player.set_file(sys.argv[1])
     interface.player.play()
