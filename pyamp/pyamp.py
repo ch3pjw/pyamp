@@ -21,6 +21,7 @@ from twisted.internet import reactor, task, protocol, stdio
 from config import load_config
 from keyboard import Keyboard, bindable, is_bindable
 from ui import HorizontalContainer, ProgressBar, TimeCheck
+from util import clamp
 
 
 class Player(object):
@@ -49,22 +50,26 @@ class Player(object):
     def get_duration(self):
         '''
         :returns: The total duration of the currently playing track, in
-        seconds, or None if the duration could not be retrieved
+        nanoseconds, or None if the duration could not be retrieved.
         '''
         try:
             duration, format_ = self.gst_player.query_duration(
                 gst.FORMAT_TIME, None)
+            return duration
         except gst.QueryError:
-            return
-        return duration / 1e9
+            pass
 
     def get_position(self):
+        '''
+        :returns: The playback position of the currently playing track, in
+        nanoseconds, or None if the position could not be retrieved.
+        '''
         try:
             position, format_ = self.gst_player.query_position(
                 gst.FORMAT_TIME, None)
+            return position
         except gst.QueryError:
-            return
-        return position / 1e9
+            pass
 
     @property
     def playing(self):
@@ -130,6 +135,32 @@ class Player(object):
         self.volume = self.volume + 0.001
         self.gst_player.set_property('volume', self.volume)
 
+    def seek(self, step):
+        '''
+        :parameter step: the time, in nanoseconds, to move in the currently
+            playing track. Negative values seek backwards.
+        '''
+        seek_to_pos = self.get_position() + step
+        seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
+        self.gst_player.seek_simple(
+            gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
+
+    @bindable
+    def seek_forward(self, step=1e9):
+        '''
+        :parameter step: the time, in nanoseconds, to move forward in the
+            currently playing track.
+        '''
+        self.seek(step)
+
+    @bindable
+    def seek_backward(self, step=1e9):
+        '''
+        :parameter step: the time, in nanoseconds, to move backward in the
+            currently playing track.
+        '''
+        self.seek(-step)
+
 
 class UI(object):
     def __init__(self, user_config, reactor=reactor):
@@ -173,8 +204,8 @@ class UI(object):
     def draw(self):
         print self.terminal.clear()
         if self.player.playing:
-            position = self.player.get_position()
-            duration = self.player.get_duration()
+            position = self.player.get_position() / 1e9
+            duration = self.player.get_duration() / 1e9
             self.progress_bar.fraction = position / duration
             self.time_check.position = position
             self.time_check.duration = duration
