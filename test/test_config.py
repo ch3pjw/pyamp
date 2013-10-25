@@ -22,6 +22,7 @@ class TestUserConfig(TestCase):
             },
             'pilot': 'Luke',
             'clean_trousers': 1,
+            'update': "should never be accessible, because it's a method name"
         }
         self.latest_config_data = {
             'blasters': True,
@@ -48,7 +49,8 @@ class TestUserConfig(TestCase):
         self.assertEqual(user_config.shields.front, 'good')
         self.assertEqual(user_config.shields.back, 'middling')
         self.assertEqual(user_config.pilot, 'Luke')
-        self.assertRaises(AttributeError, lambda: user_config.type)
+        self.assertTrue(callable(user_config.update))
+        self.assertRaises(AttributeError, lambda: user_config.ship_type)
         try:
             user_config.loafers
         except AttributeError as e:
@@ -80,9 +82,9 @@ class TestUserConfig(TestCase):
     def test_iter(self):
         user_config = UserConfig(self.default_config_data)
         user_config_output = [tup for tup in user_config]
-        self.assertItemsEqual(
-            user_config_output,
-            self.default_config_data.items())
+        self.assertItemsEqual(user_config_output, [
+            (k, v) for k, v in self.default_config_data.iteritems() if
+            k != 'update'])
         self.assertIsInstance(dict(user_config_output)['shields'], UserConfig)
 
     def test_update(self):

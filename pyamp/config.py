@@ -22,7 +22,7 @@ class UserConfig(object):
             return data
 
     def __dir__(self):
-        return sorted(dir(self.__class__) + self._data.keys())
+        return sorted(set(dir(self.__class__) + self._data.keys()))
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -31,8 +31,10 @@ class UserConfig(object):
             return self._data == other
 
     def __iter__(self):
+        cls_attrs = dir(self.__class__)
         for key in self._data:
-            yield key, getattr(self, key)
+            if key not in cls_attrs:
+                yield key, getattr(self, key)
 
     def update(self, new):
         '''Recursively update current data with data from another UserConfig
