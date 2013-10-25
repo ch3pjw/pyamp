@@ -30,12 +30,17 @@ class Player(object):
         # responsible for importing it after the environment is set up
         global gst
         import gst
-        self.gst_player = gst.element_factory_make('playbin2', 'player')
+        self.pipeline = gst.Pipeline('pyamp_player')
+        self.playbin = gst.element_factory_make('playbin2', 'pyamp_playbin')
+        self.audiosink = gst.element_factory_make(
+            'autoaudiosink', 'pyamp_audiosink')
+        self.playbin.set_property('audio-sink', self.audiosink)
+        self.pipeline.add(self.playbin)
         self.tags = {'title': ''}
         self.volume = 0.01
 
     def _handle_messages(self):
-        bus = self.gst_player.get_bus()
+        bus = self.pipeline.get_bus()
         while True:
             message = bus.poll(gst.MESSAGE_ANY, timeout=0.01)
             if message:
@@ -53,7 +58,7 @@ class Player(object):
         nanoseconds, or None if the duration could not be retrieved.
         '''
         try:
-            duration, format_ = self.gst_player.query_duration(
+            duration, format_ = self.pipeline.query_duration(
                 gst.FORMAT_TIME, None)
             return duration
         except gst.QueryError:
@@ -65,7 +70,7 @@ class Player(object):
         nanoseconds, or None if the position could not be retrieved.
         '''
         try:
-            position, format_ = self.gst_player.query_position(
+            position, format_ = self.pipeline.query_position(
                 gst.FORMAT_TIME, None)
             return position
         except gst.QueryError:
@@ -81,25 +86,25 @@ class Player(object):
         to be doing index lookups or tuple unpacking on the result of the one
         provided by gst-python.
         '''
-        success, state, pending = self.gst_player.get_state()
+        success, state, pending = self.pipeline.get_state()
         return state
 
     @state.setter
     def state(self, state):
         '''We define a 'state' setter for symmetry with the getter.
         '''
-        self.gst_player.set_state(state)
+        self.pipeline.set_state(state)
 
     def update(self):
         self._handle_messages()
 
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
-        self.gst_player.set_property('uri', 'file://{}'.format(filepath))
+        self.playbin.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
     def play(self):
-        self.gst_player.set_property('volume', self.volume)
+        self.playbin.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     @bindable
@@ -115,25 +120,25 @@ class Player(object):
 
     @bindable
     def stop(self):
-        self.gst_player.set_state(gst.STATE_NULL)
+        self.state = gst.STATE_NULL
 
     def fade_out(self, duration=0.33):
         # FIXME: this shouldn't block!
         steps = 66
         step_time = duration / steps
         for i in range(steps, -1, -1):
-            self.gst_player.set_property('volume', self.volume * (i / steps))
+            self.playbin.set_property('volume', self.volume * (i / steps))
             time.sleep(step_time)
 
     @bindable
     def volume_down(self):
         self.volume = self.volume - 0.001
-        self.gst_player.set_property('volume', self.volume)
+        self.playbin.set_property('volume', self.volume)
 
     @bindable
     def volume_up(self):
         self.volume = self.volume + 0.001
-        self.gst_player.set_property('volume', self.volume)
+        self.playbin.set_property('volume', self.volume)
 
     def seek(self, step):
         '''
@@ -142,7 +147,7 @@ class Player(object):
         '''
         seek_to_pos = self.get_position() + step
         seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
-        self.gst_player.seek_simple(
+        self.playbin.seek_simple(
             gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
 
     @bindable
@@ -204,9 +209,10 @@ class UI(object):
     def draw(self):
         print self.terminal.clear()
         if self.player.playing:
-            position = self.player.get_position() / 1e9
-            duration = self.player.get_duration() / 1e9
-            self.progress_bar.fraction = position / duration
+            position = (self.player.get_position() or 0) / 1e9
+            duration = (self.player.get_duration() or 0) / 1e9
+            if duration:
+                self.progress_bar.fraction = position / duration
             self.time_check.position = position
             self.time_check.duration = duration
         total_width = self.terminal.width - 2
