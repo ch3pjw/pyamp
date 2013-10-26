@@ -46,9 +46,13 @@ class Player(object):
         # responsible for importing it after the environment is set up
         global gst
         import gst
-        gst.info(' __init__ '.center(30, '-'))
-        gst.info('Setting up pyamp gstreamer pipeline')
+        self._setup_gstreamer_pipeline()
+        self.tags = {'title': ''}
+        # FIXME: change volume handling!
+        #self.volume = 0.01
 
+    @gst_log_calls
+    def _setup_gstreamer_pipeline(self):
         self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
 
         self.volume = gst.element_factory_make('volume', 'pyamp_volume')
@@ -64,11 +68,6 @@ class Player(object):
         self.sink_bin.add_pad(ghost_pad)
 
         self.pipeline.set_property('audio-sink', self.sink_bin)
-        self.tags = {'title': ''}
-        # FIXME: change volume handling!
-        self.volume = 0.01
-        gst.info('Finished pyamp setup')
-        gst.info('-' * 30)
 
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
