@@ -12,6 +12,8 @@ key_bindings:
     seek_backward:
         - ','
         - '<'
+persistent:
+    volume: 1
 system:
     GST_DEBUG:
     GST_DEBUG_FILE: 'gstreamer.log'

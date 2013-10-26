@@ -40,14 +40,14 @@ def gst_log_calls(func):
 
 
 class Player(object):
-    def __init__(self):
+    def __init__(self, initial_volume=1):
         # We're the only class that should be using gst, so we'll be
         # responsible for importing it after the environment is set up
         global gst
         import gst
+        self.target_volume = initial_volume
         self._setup_gstreamer_pipeline()
         self.tags = {'title': ''}
-        self.target_volume = 1
 
     @gst_log_calls
     def _setup_gstreamer_pipeline(self):
@@ -72,6 +72,7 @@ class Player(object):
         self.volume_controller = gst.Controller(self.volume, 'volume')
         self.volume_controller.set_interpolation_mode(
             'volume', gst.INTERPOLATE_LINEAR)
+        self.volume.set_property('volume', self.target_volume)
         self.fade_controller = gst.Controller(self.master_fade, 'volume')
         self.fade_controller.set_interpolation_mode(
             'volume', gst.INTERPOLATE_LINEAR)
@@ -222,7 +223,7 @@ class UI(object):
     def __init__(self, user_config, reactor=reactor):
         self.user_config = user_config
         self.reactor = reactor
-        self.player = Player()
+        self.player = Player(initial_volume=user_config.persistent.volume)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
