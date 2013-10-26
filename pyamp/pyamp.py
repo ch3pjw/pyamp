@@ -10,6 +10,7 @@ from twisted.internet import reactor, task, protocol, stdio
 
 from base import PyampBase
 from player import Player, gst, gst_log_calls
+from discoverer import Discoverer
 from config import load_config
 from keyboard import Keyboard, bindable, is_bindable
 from terminal import Terminal
@@ -127,6 +128,8 @@ def main():
     logging.basicConfig(
         filename=user_config.system.log_file,
         level=getattr(logging, user_config.system.log_level.upper()))
+    discoverer = Discoverer()
+    d = discoverer.discover_on_path(user_config.library.index_paths)
     interface = UI(user_config)
     interface.player.set_file(sys.argv[1])
     interface.player.play()
