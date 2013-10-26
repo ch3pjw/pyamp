@@ -84,10 +84,15 @@ class UI(object):
     @bindable
     @gst_log_calls
     def quit(self):
-        if self.player.playing:
-            self.player.fade_out()
+        def clean_up():
             self.player.stop()
-        self.reactor.stop()
+            self.reactor.stop()
+        if self.player.playing:
+            fade_out_time = 1
+            self.player.fade_out(fade_out_time)
+            reactor.callLater(fade_out_time + 0.1, clean_up)
+        else:
+            clean_up()
 
     def run(self):
         with self.terminal.fullscreen():
