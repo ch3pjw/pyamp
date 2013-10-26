@@ -48,13 +48,24 @@ class Player(object):
         import gst
         gst.info(' __init__ '.center(30, '-'))
         gst.info('Setting up pyamp gstreamer pipeline')
-        self.pipeline = gst.Pipeline('pyamp_player')
-        self.playbin = gst.element_factory_make('playbin2', 'pyamp_playbin')
+
+        self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
+
+        self.volume = gst.element_factory_make('volume', 'pyamp_volume')
         self.audiosink = gst.element_factory_make(
             'autoaudiosink', 'pyamp_audiosink')
-        self.playbin.set_property('audio-sink', self.audiosink)
-        self.pipeline.add(self.playbin)
+
+        self.sink_bin = gst.Bin('audio_sink_bin')
+        self.sink_bin.add_many(self.volume, self.audiosink)
+        gst.element_link_many(self.volume, self.audiosink)
+        pad = self.volume.get_static_pad('sink')
+        ghost_pad = gst.GhostPad('sink', pad)
+        ghost_pad.set_active(True)
+        self.sink_bin.add_pad(ghost_pad)
+
+        self.pipeline.set_property('audio-sink', self.sink_bin)
         self.tags = {'title': ''}
+        # FIXME: change volume handling!
         self.volume = 0.01
         gst.info('Finished pyamp setup')
         gst.info('-' * 30)
@@ -121,12 +132,12 @@ class Player(object):
     @gst_log_calls
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
-        self.playbin.set_property('uri', 'file://{}'.format(filepath))
+        self.pipeline.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
     @gst_log_calls
     def play(self):
-        self.playbin.set_property('volume', self.volume)
+        self.pipeline.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     @bindable
@@ -153,20 +164,20 @@ class Player(object):
         steps = 66
         step_time = duration / steps
         for i in range(steps, -1, -1):
-            self.playbin.set_property('volume', self.volume * (i / steps))
+            self.pipeline.set_property('volume', self.volume * (i / steps))
             time.sleep(step_time)
 
     @bindable
     @gst_log_calls
     def volume_down(self):
         self.volume = self.volume - 0.001
-        self.playbin.set_property('volume', self.volume)
+        self.pipeline.set_property('volume', self.volume)
 
     @bindable
     @gst_log_calls
     def volume_up(self):
         self.volume = self.volume + 0.001
-        self.playbin.set_property('volume', self.volume)
+        self.pipeline.set_property('volume', self.volume)
 
     @gst_log_calls
     def seek(self, step):
@@ -176,7 +187,7 @@ class Player(object):
         '''
         seek_to_pos = self.get_position() + step
         seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
-        self.playbin.seek_simple(
+        self.pipeline.seek_simple(
             gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
 
     @bindable
@@ -259,6 +270,7 @@ class UI(object):
         action()
 
     @bindable
+    @gst_log_calls
     def quit(self):
         if self.player.playing:
             self.player.fade_out()
