@@ -54,12 +54,14 @@ class Player(object):
         self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
 
         self.volume = gst.element_factory_make('volume', 'pyamp_volume')
+        self.master_fade = gst.element_factory_make(
+            'volume', 'pyamp_master_fade')
         self.audiosink = gst.element_factory_make(
             'autoaudiosink', 'pyamp_audiosink')
 
         self.sink_bin = gst.Bin('audio_sink_bin')
-        self.sink_bin.add_many(self.volume, self.audiosink)
-        gst.element_link_many(self.volume, self.audiosink)
+        self.sink_bin.add_many(self.volume, self.master_fade, self.audiosink)
+        gst.element_link_many(self.volume, self.master_fade, self.audiosink)
         pad = self.volume.get_static_pad('sink')
         ghost_pad = gst.GhostPad('sink', pad)
         ghost_pad.set_active(True)
@@ -69,6 +71,9 @@ class Player(object):
 
         self.volume_controller = gst.Controller(self.volume, 'volume')
         self.volume_controller.set_interpolation_mode(
+            'volume', gst.INTERPOLATE_LINEAR)
+        self.fade_controller = gst.Controller(self.master_fade, 'volume')
+        self.fade_controller.set_interpolation_mode(
             'volume', gst.INTERPOLATE_LINEAR)
 
     def _handle_messages(self):
@@ -159,22 +164,29 @@ class Player(object):
         self.state = gst.STATE_NULL
 
     @gst_log_calls
+    def fade(self, level, duration):
+        position = self.get_position() + (duration * gst.SECOND)
+        self.fade_controller.set('volume', position, level)
+
     def fade_out(self, duration=0.5):
-        self.change_volume(delta=-self.target_volume, duration=duration)
+        self.fade(0, duration)
+
+    def fade_in(self, duration=0.5):
+        self.fade(1, duration)
 
     @gst_log_calls
-    def change_volume(self, delta, duration):
-        position = self.get_position() + (duration * gst.SECOND)
+    def change_volume(self, delta):
+        position = self.get_position() + (0.33 * gst.SECOND)
         self.target_volume = clamp(self.target_volume + delta, 0, 1)
         self.volume_controller.set('volume', position, self.target_volume)
 
     @bindable
     def volume_down(self):
-        self.change_volume(delta=-0.1, duration=0.33)
+        self.change_volume(delta=-0.1)
 
     @bindable
     def volume_up(self):
-        self.change_volume(delta=0.1, duration=0.33)
+        self.change_volume(delta=0.1)
 
     @gst_log_calls
     def seek(self, step):
