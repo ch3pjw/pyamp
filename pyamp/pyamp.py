@@ -6,6 +6,7 @@ import os
 import signal
 import time
 from contextlib import contextmanager
+from functools import wraps
 
 import blessings
 import termios
@@ -24,12 +25,29 @@ from ui import HorizontalContainer, ProgressBar, TimeCheck
 from util import clamp
 
 
+def gst_log_calls(func):
+    '''Decorator to make `func` log it's calls and arguments to the gstreamer
+    log file.
+    '''
+    @wraps(func)
+    def logging_func(*args, **kwargs):
+        gst.info(' {} '.format(func.__name__).center(35, '-'))
+        gst.info('called with args: {}, kwargs: {}'.format(args, kwargs))
+        result = func(*args, **kwargs)
+        gst.info('{} result: {}'.format(func.__name__, result))
+        gst.info('-' * 35)
+        return result
+    return logging_func
+
+
 class Player(object):
     def __init__(self):
         # We're the only class that should be using gst, so we'll be
         # responsible for importing it after the environment is set up
         global gst
         import gst
+        gst.info(' __init__ '.center(30, '-'))
+        gst.info('Setting up pyamp gstreamer pipeline')
         self.pipeline = gst.Pipeline('pyamp_player')
         self.playbin = gst.element_factory_make('playbin2', 'pyamp_playbin')
         self.audiosink = gst.element_factory_make(
@@ -38,6 +56,8 @@ class Player(object):
         self.pipeline.add(self.playbin)
         self.tags = {'title': ''}
         self.volume = 0.01
+        gst.info('Finished pyamp setup')
+        gst.info('-' * 30)
 
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
@@ -98,20 +118,24 @@ class Player(object):
     def update(self):
         self._handle_messages()
 
+    @gst_log_calls
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
         self.playbin.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
+    @gst_log_calls
     def play(self):
         self.playbin.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     @bindable
+    @gst_log_calls
     def pause(self):
         self.state = gst.STATE_PAUSED
 
     @bindable
+    @gst_log_calls
     def play_pause(self):
         if self.playing:
             self.pause()
@@ -119,9 +143,11 @@ class Player(object):
             self.play()
 
     @bindable
+    @gst_log_calls
     def stop(self):
         self.state = gst.STATE_NULL
 
+    @gst_log_calls
     def fade_out(self, duration=0.33):
         # FIXME: this shouldn't block!
         steps = 66
@@ -131,15 +157,18 @@ class Player(object):
             time.sleep(step_time)
 
     @bindable
+    @gst_log_calls
     def volume_down(self):
         self.volume = self.volume - 0.001
         self.playbin.set_property('volume', self.volume)
 
     @bindable
+    @gst_log_calls
     def volume_up(self):
         self.volume = self.volume + 0.001
         self.playbin.set_property('volume', self.volume)
 
+    @gst_log_calls
     def seek(self, step):
         '''
         :parameter step: the time, in nanoseconds, to move in the currently
