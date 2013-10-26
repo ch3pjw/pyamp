@@ -6,9 +6,9 @@ from base import PyampBase
 from player import gst
 
 
-class Discoverer(PyampBase):
+class Library(PyampBase):
     def __init__(self):
-        super(Discoverer, self).__init__()
+        super(Library, self).__init__()
         from gst import pbutils
         self.discoverer = pbutils.Discoverer(gst.SECOND)
 
@@ -20,7 +20,7 @@ class Discoverer(PyampBase):
         return tags
 
     def discover_on_path(self, dir_path):
-        dir_path = os.path.expandUser(dir_path)
+        dir_path = os.path.expanduser(dir_path)
         def on_error(self, failure):
             self.log.exception(failure.value)
         deferreds = []

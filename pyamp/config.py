@@ -61,8 +61,11 @@ class UserConfig(object):
 
 def load_config():
     path_to_here = os.path.dirname(__file__)
-    default_config_file_path = os.path.join(path_to_here, 'default.pyamp')
-    user_config_file_path = os.path.join(os.path.expanduser('~'), '.pyamp')
+    default_config_file_path = os.path.join(path_to_here, 'default.config')
+    pyamp_dir_path = os.path.join(os.path.expanduser('~'), '.pyamp')
+    user_config_file_path = os.path.join(pyamp_dir_path, 'config')
+    if not os.path.exists(pyamp_dir_path):
+        os.mkdir(pyamp_dir_path)
     if not os.path.exists(user_config_file_path):
         shutil.copy2(default_config_file_path, user_config_file_path)
     with open(default_config_file_path) as fp:
