@@ -4,7 +4,6 @@ from __future__ import division
 import sys
 import os
 import signal
-import time
 from contextlib import contextmanager
 from functools import wraps
 
@@ -48,8 +47,6 @@ class Player(object):
         import gst
         self._setup_gstreamer_pipeline()
         self.tags = {'title': ''}
-        # FIXME: change volume handling!
-        #self.volume = 0.01
 
     @gst_log_calls
     def _setup_gstreamer_pipeline(self):
@@ -68,6 +65,10 @@ class Player(object):
         self.sink_bin.add_pad(ghost_pad)
 
         self.pipeline.set_property('audio-sink', self.sink_bin)
+
+        self.volume_controller = gst.Controller(self.volume, 'volume')
+        self.volume_controller.set_interpolation_mode(
+            'volume', gst.INTERPOLATE_LINEAR)
 
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
@@ -136,7 +137,6 @@ class Player(object):
     @bindable
     @gst_log_calls
     def play(self):
-        self.pipeline.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     @bindable
@@ -158,25 +158,19 @@ class Player(object):
         self.state = gst.STATE_NULL
 
     @gst_log_calls
-    def fade_out(self, duration=0.33):
-        # FIXME: this shouldn't block!
-        steps = 66
-        step_time = duration / steps
-        for i in range(steps, -1, -1):
-            self.pipeline.set_property('volume', self.volume * (i / steps))
-            time.sleep(step_time)
+    def fade_out(self, duration=0.5):
+        position = self.get_position() + (duration * gst.SECOND)
+        self.volume_controller.set('volume', position, 0.0)
 
     @bindable
     @gst_log_calls
     def volume_down(self):
-        self.volume = self.volume - 0.001
-        self.pipeline.set_property('volume', self.volume)
+        pass
 
     @bindable
     @gst_log_calls
     def volume_up(self):
-        self.volume = self.volume + 0.001
-        self.pipeline.set_property('volume', self.volume)
+        pass
 
     @gst_log_calls
     def seek(self, step):
@@ -190,19 +184,21 @@ class Player(object):
             gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
 
     @bindable
-    def seek_forward(self, step=1e9):
+    def seek_forward(self, step=None):
         '''
         :parameter step: the time, in nanoseconds, to move forward in the
             currently playing track.
         '''
+        step = step or gst.SECOND
         self.seek(step)
 
     @bindable
-    def seek_backward(self, step=1e9):
+    def seek_backward(self, step=None):
         '''
         :parameter step: the time, in nanoseconds, to move backward in the
             currently playing track.
         '''
+        step = step or gst.SECOND
         self.seek(-step)
 
 
@@ -246,10 +242,10 @@ class UI(object):
         self.draw()
 
     def draw(self):
-        print self.terminal.clear()
+        #print self.terminal.clear()
         if self.player.playing:
-            position = (self.player.get_position() or 0) / 1e9
-            duration = (self.player.get_duration() or 0) / 1e9
+            position = (self.player.get_position() or 0) / gst.SECOND
+            duration = (self.player.get_duration() or 0) / gst.SECOND
             if duration:
                 self.progress_bar.fraction = position / duration
             self.time_check.position = position
