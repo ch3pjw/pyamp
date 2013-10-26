@@ -191,7 +191,11 @@ class UI(object):
             if isinstance(keys, basestring):
                 keys = [keys]
             for key in keys:
-                key_bindings[key] = bindable_funcs[func_name]
+                if func_name in bindable_funcs:
+                    key_bindings[key] = bindable_funcs[func_name]
+                else:
+                    print ('Warning: {} is not a bindable pyamp '
+                           'function'.format(func_name))
         return key_bindings
 
     def update(self):
