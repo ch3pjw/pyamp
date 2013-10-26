@@ -15,5 +15,7 @@ key_bindings:
 persistent:
     volume: 1
 system:
+    log_file: 'pyamp.log'
+    log_level: 'DEBUG'
     GST_DEBUG:
     GST_DEBUG_FILE: 'gstreamer.log'
