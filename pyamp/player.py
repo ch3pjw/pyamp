@@ -29,6 +29,7 @@ def gst_log_calls(func):
 
 class Player(PyampBase):
     def __init__(self, initial_volume=1):
+        super(Player, self).__init__()
         # Because someone else may be responsible for setting up the
         # environment before gst import, we do the import here, which is as
         # late as possible, and pretend to the rest of the world like gst was

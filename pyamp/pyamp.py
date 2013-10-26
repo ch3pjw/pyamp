@@ -8,6 +8,7 @@ import logging
 
 from twisted.internet import reactor, task, protocol, stdio
 
+from base import PyampBase
 from player import Player, gst, gst_log_calls
 from config import load_config
 from keyboard import Keyboard, bindable, is_bindable
@@ -15,8 +16,9 @@ from terminal import Terminal
 from ui import HorizontalContainer, ProgressBar, TimeCheck
 
 
-class UI(object):
+class UI(PyampBase):
     def __init__(self, user_config, reactor=reactor):
+        super(UI, self).__init__()
         self.user_config = user_config
         self.reactor = reactor
         self.player = Player(initial_volume=user_config.persistent.volume)
@@ -44,11 +46,13 @@ class UI(object):
             if isinstance(keys, basestring):
                 keys = [keys]
             for key in keys:
+                key = ' '.join(key.split())
                 if func_name in bindable_funcs:
                     key_bindings[key] = bindable_funcs[func_name]
                 else:
-                    print ('Warning: {} is not a bindable pyamp '
-                           'function'.format(func_name))
+                    self.log.warning(
+                        'Warning: {} is not a bindable pyamp function'.format(
+                            func_name))
         return key_bindings
 
     def update(self):
