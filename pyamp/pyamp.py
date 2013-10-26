@@ -47,6 +47,7 @@ class Player(object):
         import gst
         self._setup_gstreamer_pipeline()
         self.tags = {'title': ''}
+        self.target_volume = 1
 
     @gst_log_calls
     def _setup_gstreamer_pipeline(self):
@@ -159,18 +160,21 @@ class Player(object):
 
     @gst_log_calls
     def fade_out(self, duration=0.5):
+        self.change_volume(delta=-self.target_volume, duration=duration)
+
+    @gst_log_calls
+    def change_volume(self, delta, duration):
         position = self.get_position() + (duration * gst.SECOND)
-        self.volume_controller.set('volume', position, 0.0)
+        self.target_volume = clamp(self.target_volume + delta, 0, 1)
+        self.volume_controller.set('volume', position, self.target_volume)
 
     @bindable
-    @gst_log_calls
     def volume_down(self):
-        pass
+        self.change_volume(delta=-0.1, duration=0.33)
 
     @bindable
-    @gst_log_calls
     def volume_up(self):
-        pass
+        self.change_volume(delta=0.1, duration=0.33)
 
     @gst_log_calls
     def seek(self, step):
