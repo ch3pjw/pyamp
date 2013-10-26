@@ -4,8 +4,8 @@ from __future__ import division
 import sys
 import os
 import signal
-import time
 from contextlib import contextmanager
+from functools import wraps
 
 import blessings
 import termios
@@ -24,18 +24,60 @@ from ui import HorizontalContainer, ProgressBar, TimeCheck
 from util import clamp
 
 
+def gst_log_calls(func):
+    '''Decorator to make `func` log it's calls and arguments to the gstreamer
+    log file.
+    '''
+    @wraps(func)
+    def logging_func(*args, **kwargs):
+        gst.info(' {} '.format(func.__name__).center(35, '-'))
+        gst.info('called with args: {}, kwargs: {}'.format(args, kwargs))
+        result = func(*args, **kwargs)
+        gst.info('{} result: {}'.format(func.__name__, result))
+        gst.info('-' * 35)
+        return result
+    return logging_func
+
+
 class Player(object):
     def __init__(self):
         # We're the only class that should be using gst, so we'll be
         # responsible for importing it after the environment is set up
         global gst
         import gst
-        self.gst_player = gst.element_factory_make('playbin2', 'player')
+        self._setup_gstreamer_pipeline()
         self.tags = {'title': ''}
-        self.volume = 0.01
+        self.target_volume = 1
+
+    @gst_log_calls
+    def _setup_gstreamer_pipeline(self):
+        self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
+
+        self.volume = gst.element_factory_make('volume', 'pyamp_volume')
+        self.master_fade = gst.element_factory_make(
+            'volume', 'pyamp_master_fade')
+        self.audiosink = gst.element_factory_make(
+            'autoaudiosink', 'pyamp_audiosink')
+
+        self.sink_bin = gst.Bin('audio_sink_bin')
+        self.sink_bin.add_many(self.volume, self.master_fade, self.audiosink)
+        gst.element_link_many(self.volume, self.master_fade, self.audiosink)
+        pad = self.volume.get_static_pad('sink')
+        ghost_pad = gst.GhostPad('sink', pad)
+        ghost_pad.set_active(True)
+        self.sink_bin.add_pad(ghost_pad)
+
+        self.pipeline.set_property('audio-sink', self.sink_bin)
+
+        self.volume_controller = gst.Controller(self.volume, 'volume')
+        self.volume_controller.set_interpolation_mode(
+            'volume', gst.INTERPOLATE_LINEAR)
+        self.fade_controller = gst.Controller(self.master_fade, 'volume')
+        self.fade_controller.set_interpolation_mode(
+            'volume', gst.INTERPOLATE_LINEAR)
 
     def _handle_messages(self):
-        bus = self.gst_player.get_bus()
+        bus = self.pipeline.get_bus()
         while True:
             message = bus.poll(gst.MESSAGE_ANY, timeout=0.01)
             if message:
@@ -53,7 +95,7 @@ class Player(object):
         nanoseconds, or None if the duration could not be retrieved.
         '''
         try:
-            duration, format_ = self.gst_player.query_duration(
+            duration, format_ = self.pipeline.query_duration(
                 gst.FORMAT_TIME, None)
             return duration
         except gst.QueryError:
@@ -65,7 +107,7 @@ class Player(object):
         nanoseconds, or None if the position could not be retrieved.
         '''
         try:
-            position, format_ = self.gst_player.query_position(
+            position, format_ = self.pipeline.query_position(
                 gst.FORMAT_TIME, None)
             return position
         except gst.QueryError:
@@ -81,32 +123,35 @@ class Player(object):
         to be doing index lookups or tuple unpacking on the result of the one
         provided by gst-python.
         '''
-        success, state, pending = self.gst_player.get_state()
+        success, state, pending = self.pipeline.get_state()
         return state
 
     @state.setter
     def state(self, state):
         '''We define a 'state' setter for symmetry with the getter.
         '''
-        self.gst_player.set_state(state)
+        self.pipeline.set_state(state)
 
     def update(self):
         self._handle_messages()
 
+    @gst_log_calls
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
-        self.gst_player.set_property('uri', 'file://{}'.format(filepath))
+        self.pipeline.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
+    @gst_log_calls
     def play(self):
-        self.gst_player.set_property('volume', self.volume)
         self.state = gst.STATE_PLAYING
 
     @bindable
+    @gst_log_calls
     def pause(self):
         self.state = gst.STATE_PAUSED
 
     @bindable
+    @gst_log_calls
     def play_pause(self):
         if self.playing:
             self.pause()
@@ -114,27 +159,36 @@ class Player(object):
             self.play()
 
     @bindable
+    @gst_log_calls
     def stop(self):
-        self.gst_player.set_state(gst.STATE_NULL)
+        self.state = gst.STATE_NULL
 
-    def fade_out(self, duration=0.33):
-        # FIXME: this shouldn't block!
-        steps = 66
-        step_time = duration / steps
-        for i in range(steps, -1, -1):
-            self.gst_player.set_property('volume', self.volume * (i / steps))
-            time.sleep(step_time)
+    @gst_log_calls
+    def fade(self, level, duration):
+        position = self.get_position() + (duration * gst.SECOND)
+        self.fade_controller.set('volume', position, level)
+
+    def fade_out(self, duration=0.5):
+        self.fade(0, duration)
+
+    def fade_in(self, duration=0.5):
+        self.fade(1, duration)
+
+    @gst_log_calls
+    def change_volume(self, delta):
+        position = self.get_position() + (0.33 * gst.SECOND)
+        self.target_volume = clamp(self.target_volume + delta, 0, 1)
+        self.volume_controller.set('volume', position, self.target_volume)
 
     @bindable
     def volume_down(self):
-        self.volume = self.volume - 0.001
-        self.gst_player.set_property('volume', self.volume)
+        self.change_volume(delta=-0.1)
 
     @bindable
     def volume_up(self):
-        self.volume = self.volume + 0.001
-        self.gst_player.set_property('volume', self.volume)
+        self.change_volume(delta=0.1)
 
+    @gst_log_calls
     def seek(self, step):
         '''
         :parameter step: the time, in nanoseconds, to move in the currently
@@ -142,23 +196,25 @@ class Player(object):
         '''
         seek_to_pos = self.get_position() + step
         seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
-        self.gst_player.seek_simple(
+        self.pipeline.seek_simple(
             gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
 
     @bindable
-    def seek_forward(self, step=1e9):
+    def seek_forward(self, step=None):
         '''
         :parameter step: the time, in nanoseconds, to move forward in the
             currently playing track.
         '''
+        step = step or gst.SECOND
         self.seek(step)
 
     @bindable
-    def seek_backward(self, step=1e9):
+    def seek_backward(self, step=None):
         '''
         :parameter step: the time, in nanoseconds, to move backward in the
             currently playing track.
         '''
+        step = step or gst.SECOND
         self.seek(-step)
 
 
@@ -206,11 +262,12 @@ class UI(object):
         self.draw()
 
     def draw(self):
-        print self.terminal.clear()
+        #print self.terminal.clear()
         if self.player.playing:
-            position = self.player.get_position() / 1e9
-            duration = self.player.get_duration() / 1e9
-            self.progress_bar.fraction = position / duration
+            position = (self.player.get_position() or 0) / gst.SECOND
+            duration = (self.player.get_duration() or 0) / gst.SECOND
+            if duration:
+                self.progress_bar.fraction = position / duration
             self.time_check.position = position
             self.time_check.duration = duration
         total_width = self.terminal.width - 2
@@ -228,6 +285,7 @@ class UI(object):
         action()
 
     @bindable
+    @gst_log_calls
     def quit(self):
         if self.player.playing:
             self.player.fade_out()
