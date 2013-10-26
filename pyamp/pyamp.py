@@ -4,12 +4,7 @@ from __future__ import division
 import sys
 import os
 import signal
-from contextlib import contextmanager
 from functools import wraps
-
-import blessings
-import termios
-import tty
 
 import pygst
 pygst.require('0.10')
@@ -20,6 +15,7 @@ from twisted.internet import reactor, task, protocol, stdio
 
 from config import load_config
 from keyboard import Keyboard, bindable, is_bindable
+from terminal import Terminal
 from ui import HorizontalContainer, ProgressBar, TimeCheck
 from util import clamp
 
@@ -312,21 +308,6 @@ class InputReader(protocol.Protocol):
     def dataReceived(self, data):
         key_name = self.keyboard[data]
         self.ui.handle_input(key_name)
-
-
-class Terminal(blessings.Terminal):
-    @contextmanager
-    def unbuffered_input(self):
-        if self.is_a_tty:
-            orig_tty_attrs = termios.tcgetattr(self.stream)
-            tty.setcbreak(self.stream)
-            try:
-                yield
-            finally:
-                termios.tcsetattr(
-                    self.stream, termios.TCSADRAIN, orig_tty_attrs)
-        else:
-            yield
 
 
 def main():
