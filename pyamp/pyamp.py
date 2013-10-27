@@ -130,9 +130,17 @@ def main():
         level=getattr(logging, user_config.system.log_level.upper()))
     interface = UI(user_config)
     library = Library(user_config.library.database_path)
-    d = library.discover_on_path(user_config.library.index_paths)
-    interface.player.set_file(sys.argv[1])
-    interface.player.play()
+    if os.path.exists(sys.argv[1]):
+        interface.player.set_file(sys.argv[1])
+        interface.player.play()
+    else:
+        # Oh no! There's no file, let's do a search!
+        d = library.discover_on_path(user_config.library.index_paths)
+        d.addCallback(lambda _: library.search_tracks(sys.argv[1]))
+        @d.addCallback
+        def search_track(result):
+            interface.player.set_file(result[0][0])
+            interface.player.play()
     interface.run()
 
 if __name__ == '__main__':
