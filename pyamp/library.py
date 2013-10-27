@@ -1,5 +1,5 @@
 import os
-
+import sqlite3
 from twisted.internet import threads, defer
 
 from base import PyampBase
@@ -7,10 +7,23 @@ from player import gst
 
 
 class Library(PyampBase):
-    def __init__(self):
+
+    def __init__(self, database_file):
         super(Library, self).__init__()
+        self.database_file = os.path.expanduser(database_file)
         from gst import pbutils
         self.discoverer = pbutils.Discoverer(gst.SECOND)
+        self.connection = None
+        self.cursor = None
+
+    def connect(self):
+        self.connection = sqlite3.connect(self.database_file)
+        self.cursor = self.connection.cursor()
+
+    def disconnect(self):
+        self.connection.commit()
+        self.connection.close()
+        self.connection = None
 
     def _do_discover(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)

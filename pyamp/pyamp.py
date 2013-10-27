@@ -129,7 +129,7 @@ def main():
         filename=user_config.system.log_file,
         level=getattr(logging, user_config.system.log_level.upper()))
     interface = UI(user_config)
-    library = Library()
+    library = Library(user_config.library.database_path)
     d = library.discover_on_path(user_config.library.index_paths)
     interface.player.set_file(sys.argv[1])
     interface.player.play()

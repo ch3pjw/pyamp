@@ -22,7 +22,8 @@ setup(
     install_requires=[
         'Twisted',
         'blessings',
-        'pyyaml'],
+        'pyyaml',
+        'pysqlite'],
     packages=[
         'pyamp'],
     package_data={
