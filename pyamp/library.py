@@ -1,10 +1,34 @@
 import os
 import sqlite3
 from collections import namedtuple
+from functools import wraps
 from twisted.internet import threads
 
 from base import PyampBase
 from player import gst
+
+
+def blocking(func):
+    '''Decorator to defer a blocking method to a thread.
+    '''
+    @wraps(func)
+    def deferred_to_thread(*args, **kwargs):
+        return threads.deferToThread(func, *args, **kwargs)
+    return deferred_to_thread
+
+
+def with_database_cursor(func):
+    '''Turns out we can't easily share sqlite database connections when we're
+    deferring stuff to thread, because sqlite doesn't want to share
+    connection/cursor objects between threads. This decorator sets up a new
+    database connection for each method call.
+    '''
+    @wraps(func)
+    def func_with_cursor(self, *args, **kwargs):
+        with sqlite3.connect(self.database_file) as connection:
+            cursor = connection.cursor()
+            return func(self, cursor, *args, **kwargs)
+    return func_with_cursor
 
 
 Tags = namedtuple(
@@ -23,17 +47,6 @@ class Library(PyampBase):
         self.database_file = os.path.expanduser(database_file)
         from gst import pbutils
         self.discoverer = pbutils.Discoverer(gst.SECOND)
-        self.connection = None
-        self.cursor = None
-
-    def connect(self):
-        self.connection = sqlite3.connect(self.database_file)
-        self.cursor = self.connection.cursor()
-
-    def disconnect(self):
-        self.connection.commit()
-        self.connection.close()
-        self.connection = None
 
     def _make_tags(self, file_path, gst_tags):
         tag_dict = {}
@@ -50,25 +63,26 @@ class Library(PyampBase):
         info = self.discoverer.discover_uri('file://' + file_path)
         tags = self._make_tags(file_path, info.get_tags())
         self.log.debug('Found file {}'.format(tags))
-        self.cursor.execute(
-            'INSERT INTO Tracks VALUES({})'.format(self._tag_placholder), tags)
+        return tags
 
-    def _discover_on_path(self, dir_path):
+    @blocking
+    @with_database_cursor
+    def discover_on_path(self, cursor, dir_path):
         dir_path = os.path.expanduser(dir_path)
         self.log.info('Discovering tracks on {}'.format(dir_path))
-        self.connect()
         # FIXME: eventually, of course, we'll want data to persist
-        self.cursor.execute('DROP TABLE IF EXISTS Tracks')
-        self.cursor.execute('CREATE TABLE Tracks({})'.format(self._tag_spec))
+        cursor.execute('DROP TABLE IF EXISTS Tracks')
+        cursor.execute('CREATE TABLE Tracks({})'.format(self._tag_spec))
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
             for file_name in file_names:
                 file_path = os.path.join(dir_path, file_name)
                 try:
-                    self._do_discover(file_path)
+                    tags = self._do_discover(file_path)
+                    cursor.execute(
+                        'INSERT INTO Tracks VALUES({})'.format(
+                            self._tag_placholder),
+                        tags)
                 except Exception:
                     self.log.exception(
                         'Error whilst discovering track {}'.format(file_path))
-        self.disconnect()
 
-    def discover_on_path(self, dir_path):
-        return threads.deferToThread(self._discover_on_path, dir_path)
