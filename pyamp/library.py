@@ -10,8 +10,8 @@ from player import gst
 Tags = namedtuple(
     'Tags', (
         'album', 'artist', 'audio_codec', 'bitrate', 'container_format',
-        'date', 'encoder', 'encoder_version', 'genre', 'nominal_bitrate',
-        'title', 'track_number'))
+        'date', 'encoder', 'encoder_version', 'file_path', 'genre',
+        'nominal_bitrate', 'title', 'track_number'))
 
 
 class Library(PyampBase):
@@ -35,7 +35,7 @@ class Library(PyampBase):
         self.connection.close()
         self.connection = None
 
-    def _make_tags(self, gst_tags):
+    def _make_tags(self, file_path, gst_tags):
         tag_dict = {}
         for tag_name in Tags._fields:
             gst_tag_name = tag_name.replace('_', '-')
@@ -43,12 +43,13 @@ class Library(PyampBase):
                 tag_dict[tag_name] = str(gst_tags[gst_tag_name])
             else:
                 tag_dict[tag_name] = None
+        tag_dict['file_path'] = file_path
         return Tags(**tag_dict)
 
     def _do_discover(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
         tags = self._make_tags(file_path, info.get_tags())
-        self.log.debug('Found file {}: {}'.format(file_path, tags))
+        self.log.debug('Found file {}'.format(tags))
         self.cursor.execute(
             'INSERT INTO Tracks VALUES({})'.format(self._tag_placholder), tags)
 
