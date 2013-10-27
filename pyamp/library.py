@@ -31,16 +31,29 @@ def with_database_cursor(func):
     return func_with_cursor
 
 
-Tags = namedtuple(
-    'Tags', (
-        'album', 'artist', 'audio_codec', 'bitrate', 'container_format',
-        'date', 'encoder', 'encoder_version', 'file_path', 'genre',
-        'nominal_bitrate', 'title', 'track_number'))
-
-
 class Library(PyampBase):
-    _tag_spec = ', '.join('{} TEXT'.format(name) for name in Tags._fields)
-    _tag_placholder = ', '.join('?' * len(Tags._fields))
+    _metadata_format = {
+        'album': str,
+        'artist': str,
+        'audio_codec': str,
+        'bitrate': long,
+        'container_format': str,
+        'date': str,
+        'encoder': str,
+        'encoder_version': str,
+        'file_path': str,
+        'genre': str,
+        'modified_time': float,
+        'nominal_bitrate': str,
+        'title': str,
+        'track_number': int}
+    _format_to_sql_spec = {
+        str: 'TEXT',
+        int: 'INTEGER',
+        long: 'LONG',
+        float: 'SINGLE'}
+    Metadata = namedtuple('Metadata', _metadata_format.keys())
+    _metadata_placeholder = ', '.join('?' * len(_metadata_format))
 
     def __init__(self, database_file):
         super(Library, self).__init__()
@@ -48,22 +61,35 @@ class Library(PyampBase):
         from gst import pbutils
         self.discoverer = pbutils.Discoverer(gst.SECOND)
 
-    def _make_tags(self, file_path, gst_tags):
+    @property
+    def _metadata_sql_spec(self):
+        '''We want this to be a class variable, but we can't easily calculate
+        it in the class definition because of name scoping. So, lets make a
+        property that replaces itself on first call.
+        '''
+        metadata_sql_spec = ', '.join('{name} {type_}'.format(
+            name=name, type_=self._format_to_sql_spec[format_]) for
+            name, format_ in self._metadata_format.iteritems())
+        self.__class__._metadata_sql_spec = metadata_sql_spec
+        return metadata_sql_spec
+
+    def _make_metadata(self, file_path, gst_tags):
         tag_dict = {}
-        for tag_name in Tags._fields:
+        for tag_name in self._metadata_format.iterkeys():
             gst_tag_name = tag_name.replace('_', '-')
-            if tag_name in gst_tags:
-                tag_dict[tag_name] = str(gst_tags[gst_tag_name])
+            if gst_tag_name in gst_tags:
+                formatter = self._metadata_format[tag_name]
+                tag_dict[tag_name] = formatter(gst_tags[gst_tag_name])
             else:
                 tag_dict[tag_name] = None
         tag_dict['file_path'] = file_path
-        return Tags(**tag_dict)
+        return self.Metadata(**tag_dict)
 
     def _do_discover(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
-        tags = self._make_tags(file_path, info.get_tags())
-        self.log.debug('Found file {}'.format(tags))
-        return tags
+        metadata = self._make_metadata(file_path, info.get_tags())
+        self.log.debug('Found file {}'.format(metadata))
+        return metadata
 
     @blocking
     @with_database_cursor
@@ -72,16 +98,17 @@ class Library(PyampBase):
         self.log.info('Discovering tracks on {}'.format(dir_path))
         # FIXME: eventually, of course, we'll want data to persist
         cursor.execute('DROP TABLE IF EXISTS Tracks')
-        cursor.execute('CREATE TABLE Tracks({})'.format(self._tag_spec))
+        cursor.execute('CREATE TABLE Tracks({})'.format(
+            self._metadata_sql_spec))
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
             for file_name in file_names:
                 file_path = os.path.join(cur_dir_path, file_name)
                 try:
-                    tags = self._do_discover(file_path)
+                    metadata = self._do_discover(file_path)
                     cursor.execute(
                         'INSERT INTO Tracks VALUES({})'.format(
-                            self._tag_placholder),
-                        tags)
+                            self._metadata_placeholder),
+                        metadata)
                 except Exception:
                     self.log.exception(
                         'Error whilst discovering track {}'.format(file_path))
