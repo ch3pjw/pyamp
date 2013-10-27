@@ -75,7 +75,7 @@ class Library(PyampBase):
         cursor.execute('CREATE TABLE Tracks({})'.format(self._tag_spec))
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
             for file_name in file_names:
-                file_path = os.path.join(dir_path, file_name)
+                file_path = os.path.join(cur_dir_path, file_name)
                 try:
                     tags = self._do_discover(file_path)
                     cursor.execute(
