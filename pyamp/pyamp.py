@@ -132,6 +132,7 @@ def set_up_environment(user_config):
         level=getattr(logging, user_config.system.log_level.upper()),
         format='[%(asctime)s %(levelname)s] %(message)s',
         datefmt='%H:%M:%S')
+    os.stat_float_times(True)
 
 
 def main():

@@ -83,6 +83,8 @@ class Library(PyampBase):
             else:
                 tag_dict[tag_name] = None
         tag_dict['file_path'] = file_path
+        file_stats = os.stat(file_path)
+        tag_dict['modified_time'] = file_stats.st_mtime
         return self.Metadata(**tag_dict)
 
     def _do_discover(self, file_path):
