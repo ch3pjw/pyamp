@@ -127,7 +127,10 @@ def main():
         os.environ['GST_DEBUG_FILE'] = user_config.system.GST_DEBUG_FILE
     logging.basicConfig(
         filename=user_config.system.log_file,
-        level=getattr(logging, user_config.system.log_level.upper()))
+        filemode='w',
+        level=getattr(logging, user_config.system.log_level.upper()),
+        format='[%(asctime)s %(levelname)s] %(message)s',
+        datefmt='%H:%M:%S')
     interface = UI(user_config)
     library = Library(user_config.library.database_path)
     if os.path.exists(sys.argv[1]):
