@@ -1,9 +1,17 @@
 import os
 import sqlite3
+from collections import namedtuple
 from twisted.internet import threads, defer
 
 from base import PyampBase
 from player import gst
+
+
+Tags = namedtuple(
+    'Tags', (
+        'album', 'artist', 'audio_codec', 'bitrate', 'container_format',
+        'date', 'encoder', 'encoder_version', 'genre', 'nominal_bitrate',
+        'title', 'track_number'))
 
 
 class Library(PyampBase):
@@ -24,6 +32,16 @@ class Library(PyampBase):
         self.connection.commit()
         self.connection.close()
         self.connection = None
+
+    def _make_tags(self, gst_tags):
+        tag_dict = {}
+        for tag_name in Tags._fields:
+            gst_tag_name = tag_name.replace('_', '-')
+            if tag_name in gst_tags:
+                tag_dict[tag_name] = str(gst_tags[gst_tag_name])
+            else:
+                tag_dict[tag_name] = None
+        return Tags(**tag_dict)
 
     def _do_discover(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
