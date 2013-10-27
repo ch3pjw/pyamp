@@ -86,3 +86,27 @@ class Library(PyampBase):
                     self.log.exception(
                         'Error whilst discovering track {}'.format(file_path))
 
+    def _get_search_query(self, search_string):
+        searchable_fields = 'artist', 'album', 'title'
+        query = 'SELECT DISTINCT file_path FROM Tracks WHERE '
+        search_portion = "{field} LIKE '%{search_string}%'"
+        search_portions = ' OR '.join(search_portion.format(
+            field=field, search_string=search_string) for field in
+            searchable_fields)
+        query += search_portions
+        return query
+
+    @blocking
+    @with_database_cursor
+    def search_tracks(self, cursor, search_string):
+        search_query = self._get_search_query(search_string)
+        self.log.debug(
+            'Performing track search with query: {}'.format(search_query))
+        cursor.execute(search_query)
+        return cursor.fetchall()
+
+    @blocking
+    @with_database_cursor
+    def list_tracks(self, cursor):
+        cursor.execute('SELECT * FROM Tracks')
+        return cursor.fetchall()
