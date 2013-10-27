@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from collections import namedtuple
-from twisted.internet import threads, defer
+from twisted.internet import threads
 
 from base import PyampBase
 from player import gst
@@ -15,6 +15,8 @@ Tags = namedtuple(
 
 
 class Library(PyampBase):
+    _tag_spec = ', '.join('{} TEXT'.format(name) for name in Tags._fields)
+    _tag_placholder = ', '.join('?' * len(Tags._fields))
 
     def __init__(self, database_file):
         super(Library, self).__init__()
@@ -45,20 +47,27 @@ class Library(PyampBase):
 
     def _do_discover(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
-        tags = info.get_tags()
-        tags = {tag_name: tags[tag_name] for tag_name in tags.keys()}
+        tags = self._make_tags(file_path, info.get_tags())
         self.log.debug('Found file {}: {}'.format(file_path, tags))
-        return tags
+        self.cursor.execute(
+            'INSERT INTO Tracks VALUES({})'.format(self._tag_placholder), tags)
 
-    def discover_on_path(self, dir_path):
+    def _discover_on_path(self, dir_path):
         dir_path = os.path.expanduser(dir_path)
-        def on_error(self, failure):
-            self.log.exception(failure.value)
-        deferreds = []
+        self.log.info('Discovering tracks on {}'.format(dir_path))
+        self.connect()
+        # FIXME: eventually, of course, we'll want data to persist
+        self.cursor.execute('DROP TABLE IF EXISTS Tracks')
+        self.cursor.execute('CREATE TABLE Tracks({})'.format(self._tag_spec))
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
             for file_name in file_names:
-                d = threads.deferToThread(
-                    self._do_discover, os.path.join(dir_path, file_name))
-                d.addErrback(on_error)
-                deferreds.append(d)
-        return defer.gatherResults(deferreds, consumeErrors=True)
+                file_path = os.path.join(dir_path, file_name)
+                try:
+                    self._do_discover(file_path)
+                except Exception:
+                    self.log.exception(
+                        'Error whilst discovering track {}'.format(file_path))
+        self.disconnect()
+
+    def discover_on_path(self, dir_path):
+        return threads.deferToThread(self._discover_on_path, dir_path)
