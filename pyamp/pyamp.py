@@ -120,8 +120,9 @@ class InputReader(protocol.Protocol):
         self.ui.handle_input(key_name)
 
 
-def main():
-    user_config = load_config()
+def set_up_environment(user_config):
+    '''Set up the environment for pyamp to run in - side effects galore!
+    '''
     if user_config.system.GST_DEBUG:
         os.environ['GST_DEBUG'] = user_config.system.GST_DEBUG
         os.environ['GST_DEBUG_FILE'] = user_config.system.GST_DEBUG_FILE
@@ -131,6 +132,11 @@ def main():
         level=getattr(logging, user_config.system.log_level.upper()),
         format='[%(asctime)s %(levelname)s] %(message)s',
         datefmt='%H:%M:%S')
+
+
+def main():
+    user_config = load_config()
+    set_up_environment(user_config)
     interface = UI(user_config)
     library = Library(user_config.library.database_path)
     if os.path.exists(sys.argv[1]):
