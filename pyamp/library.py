@@ -99,10 +99,17 @@ class Library(PyampBase):
         dir_path = os.path.expanduser(dir_path)
         self.log.info('Discovering tracks on {}'.format(dir_path))
         # FIXME: eventually, of course, we'll want data to persist
+        cursor.execute('DROP TABLE IF EXISTS Dirs')
+        cursor.execute(
+            'CREATE TABLE Dirs(dir_path TEXT, modified_time SINGLE)')
         cursor.execute('DROP TABLE IF EXISTS Tracks')
         cursor.execute('CREATE TABLE Tracks({})'.format(
             self._metadata_sql_spec))
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
+            dir_stats = os.stat(cur_dir_path)
+            cursor.execute(
+                'INSERT INTO Dirs VALUES(?, ?)',
+                (cur_dir_path, dir_stats.st_mtime))
             for file_name in file_names:
                 file_path = os.path.join(cur_dir_path, file_name)
                 try:
