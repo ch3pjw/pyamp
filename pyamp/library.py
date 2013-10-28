@@ -31,8 +31,98 @@ def with_database_cursor(func):
     return func_with_cursor
 
 
+class SqlSchema(PyampBase):
+    _python_to_sql_type = {
+        str: 'TEXT',
+        int: 'INTEGER',
+        long: 'LONG',
+        float: 'SINGLE'}
+
+    def __init__(self, name, columns):
+        '''
+        :parameter name: The name of the database table.
+        :parameter columns: Dictionary in the form:
+            {<column_name>: <python data type>}
+        '''
+        super(SqlSchema, self).__init__()
+        self.name = name
+        self.types = columns
+        self.attributes = {}
+        self.namedtuple = namedtuple(name, sorted(self.types.keys()))
+
+    @property
+    def columns(self):
+        return sorted(self.types.keys())
+
+    @property
+    def value_placholder(self):
+        return ', '.join('?' * len(self.types))
+
+    @property
+    def column_placeholder(self):
+        return ', '.join(self.columns)
+
+    def create_table(self, cursor):
+        self.log.debug('Creating new {} table'.format(self.name))
+        cursor.execute('CREATE TABLE {}'.format(self))
+
+    def drop_table(self, cursor):
+        self.log.debug('Dropping {} table'.format(self.name))
+        cursor.execute('DROP TABLE {}'.format(self.name))
+
+    def insert_or_replace(self, cursor, data):
+        query = 'INSERT OR REPLACE INTO {}({}) VALUES ({})'.format(
+            self.name, self.column_placeholder, self.value_placholder)
+        cursor.execute(query, self._make_data(data))
+
+    def _make_data(self, data):
+        for name, type_ in self.types.iteritems():
+            if name in data:
+                data[name] = self.types[name](data[name])
+            else:
+                data[name] = None
+        return self.namedtuple(**data)
+
+    def set_column_attributes(self, column_name, attribute):
+        assert column_name in self.types
+        self.attributes[column_name] = attribute
+
+    def __iter__(self):
+        for column_name in self.columns:
+            yield self._get_column_schema(column_name)
+
+    def __eq__(self, sql_schema):
+        return sql_schema.types == self.types
+
+    def _get_column_schema(self, column_name):
+        type_ = self._python_to_sql_type[self.types[column_name]]
+        schema = [column_name, type_]
+        attrs = self.attributes.get(column_name)
+        if attrs:
+            schema.append(attrs)
+        return schema
+
+    def __str__(self):
+        column_schemas = [' '.join(schema) for schema in self]
+        return '{name}({fields})'.format(
+            name=self.name, fields=', '.join(column_schemas))
+
+
+def make_schema_from_existing_table(cursor, table_name):
+    _sql_to_python_type = {
+        v: k for k, v in SqlSchema._python_to_sql_type.iteritems()}
+    cursor.execute('PRAGMA table_info({})'.format(table_name))
+    result = cursor.fetchall()
+    if result:
+        schema_dict = {}
+        for column in result:
+            id_, name, type_, _, _, _ = column
+            schema_dict[name] = _sql_to_python_type[type_]
+        return SqlSchema(table_name, schema_dict)
+
+
 class Library(PyampBase):
-    _metadata_format = {
+    _tracks_schema = SqlSchema('Tracks', {
         'album': str,
         'artist': str,
         'audio_codec': str,
@@ -46,17 +136,12 @@ class Library(PyampBase):
         'modified_time': float,
         'nominal_bitrate': str,
         'title': str,
-        'track_number': int}
-    _format_to_sql_spec = {
-        str: 'TEXT',
-        int: 'INTEGER',
-        long: 'LONG',
-        float: 'SINGLE'}
-    Metadata = namedtuple('Metadata', _metadata_format.keys())
-    _metadata_placeholder = ', '.join('?' * len(_metadata_format))
-    _metadata_sql_spec = [
-        (name, _format_to_sql_spec[format_]) for name, format_ in
-        _metadata_format.iteritems()]
+        'track_number': int})
+    _tracks_schema.set_column_attributes('file_path', 'UNIQUE')
+    _dirs_schema = SqlSchema('Dirs', {
+        'dir_path': str,
+        'modified_time': float})
+    _dirs_schema.set_column_attributes('dir_path', 'UNIQUE')
 
     def __init__(self, database_file):
         super(Library, self).__init__()
@@ -65,74 +150,93 @@ class Library(PyampBase):
         self.discoverer = pbutils.Discoverer(gst.SECOND)
 
     def _make_metadata(self, file_path, gst_tags):
-        tag_dict = {}
-        for tag_name in self._metadata_format.iterkeys():
-            gst_tag_name = tag_name.replace('_', '-')
-            if gst_tag_name in gst_tags:
-                formatter = self._metadata_format[tag_name]
-                tag_dict[tag_name] = formatter(gst_tags[gst_tag_name])
-            else:
-                tag_dict[tag_name] = None
-        tag_dict['file_path'] = file_path
-        file_stats = os.stat(file_path)
-        tag_dict['modified_time'] = file_stats.st_mtime
-        return self.Metadata(**tag_dict)
+        if gst_tags:
+            metadata = {}
+            for gst_tag_name in gst_tags.keys():
+                tag_name = gst_tag_name.replace('-', '_')
+                metadata[tag_name] = gst_tags[gst_tag_name]
+            metadata['file_path'] = file_path
+            file_stats = os.stat(file_path)
+            metadata['modified_time'] = file_stats.st_mtime
+            self.log.debug('Found file {}'.format(file_path))
+            return metadata
 
-    def _do_discover(self, file_path):
+    def _do_discover_dir(self, dir_path, file_names):
+        track_metadata_list = []
+        for file_name in file_names:
+            file_path = os.path.join(dir_path, file_name)
+            try:
+                track_metadata = self._do_discover_file(file_path)
+                if track_metadata:
+                    track_metadata_list.append(track_metadata)
+            except Exception:
+                self.log.exception(
+                    'Error whilst discovering track {}'.format(file_path))
+        return track_metadata_list
+
+    def _do_discover_file(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
         metadata = self._make_metadata(file_path, info.get_tags())
-        self.log.debug('Found file {}'.format(metadata))
         return metadata
 
-    def _create_table_if_required(self, cursor, table_name, spec):
-        cursor.execute('PRAGMA table_info({})'.format(table_name))
-        table_schema = cursor.fetchall()
-        if table_schema:
-            self.log.debug('Found existing {} table...'.format(table_name))
-            existing_spec = []
-            for column in table_schema:
-                id_, name, type_, _, _, _ = column
-                existing_spec.append((name, type_))
-            if existing_spec == spec:
+    def _create_table_if_required(self, cursor, sql_schema):
+        existing_schema = make_schema_from_existing_table(
+            cursor, sql_schema.name)
+        if existing_schema:
+            self.log.debug('Found existing {} table...'.format(
+                sql_schema.name))
+            if existing_schema == sql_schema:
                 self.log.debug(
-                    '{} table conforms to schema'.format(table_name))
+                    '{} table conforms to schema'.format(sql_schema.name))
                 return
             else:
                 self.log.warning(
                     '{} table does not conform to schema, dropping'.format(
-                        table_name))
-                cursor.execute('DROP TABLE {}'.format(table_name))
-        self.log.debug('Creating new {} table'.format(table_name))
-        spec_string = ', '.join(
-            '{} {}'.format(name, type_) for name, type_ in spec)
-        cursor.execute('CREATE TABLE {}({})'.format(table_name, spec_string))
+                        sql_schema.name))
+                sql_schema.drop_table(cursor)
+        sql_schema.create_table(cursor)
+
+    def _dir_modified(self, cursor, dir_path):
+        '''
+        :returns: None if the `dir_path` has not been modified since we last
+        indexed it, or the modified time if it has been updated.
+        '''
+        cursor.execute(
+            'SELECT modified_time FROM Dirs WHERE dir_path = ?', (dir_path,))
+        result = cursor.fetchone()
+        if result:
+            stored_mtime = result[0]
+        else:
+            stored_mtime = None
+        current_mtime = os.stat(dir_path).st_mtime
+        if current_mtime != stored_mtime:
+            return current_mtime
+
+    def _update_dir_if_required(self, cursor, dir_path, file_names):
+        result = 0
+        modified_time = self._dir_modified(cursor, dir_path)
+        if modified_time:
+            track_metadata_list = self._do_discover_dir(dir_path, file_names)
+            for track_metadata in track_metadata_list:
+                self._tracks_schema.insert_or_replace(cursor, track_metadata)
+            self._dirs_schema.insert_or_replace(
+                cursor, {'dir_path': dir_path, 'modified_time': modified_time})
+            result = len(track_metadata_list)
+        return result
 
     @blocking
     @with_database_cursor
     def discover_on_path(self, cursor, dir_path):
         dir_path = os.path.expanduser(dir_path)
-        self.log.info('Discovering tracks on {}'.format(dir_path))
-        self._create_table_if_required(
-            cursor, 'Dirs',
-            [('dir_path', 'TEXT'), ('modified_time', 'SINGLE')])
-        self._create_table_if_required(
-            cursor, 'Tracks', self._metadata_sql_spec)
+        self.log.info('Discovering new tracks on {}'.format(dir_path))
+        self._create_table_if_required(cursor, self._dirs_schema)
+        self._create_table_if_required(cursor, self._tracks_schema)
+        tracks_visited = 0
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
-            dir_stats = os.stat(cur_dir_path)
-            cursor.execute(
-                'INSERT INTO Dirs VALUES(?, ?)',
-                (cur_dir_path, dir_stats.st_mtime))
-            for file_name in file_names:
-                file_path = os.path.join(cur_dir_path, file_name)
-                try:
-                    metadata = self._do_discover(file_path)
-                    cursor.execute(
-                        'INSERT INTO Tracks VALUES({})'.format(
-                            self._metadata_placeholder),
-                        metadata)
-                except Exception:
-                    self.log.exception(
-                        'Error whilst discovering track {}'.format(file_path))
+            tracks_visited += self._update_dir_if_required(
+                cursor, cur_dir_path, file_names)
+        self.log.info(
+            'Discovery complete, {:d} tracks visited'.format(tracks_visited))
 
     def _get_search_query(self, search_string):
         searchable_fields = 'artist', 'album', 'title'
