@@ -1,28 +1,141 @@
 from unittest import TestCase
 from mock import patch
 
-import sqlite3
-
-from pyamp.library import SqlSchema, SqlRepresentableType, TrackMetadata
+from pyamp.library import SqlRepresentableType, TrackMetadata, Dir, Library
 
 
-class TestSqlRepresentableTypeMeta(TestCase):
-    def test_abc(self):
-        # Can't instantiate abstract base class
-        self.assertRaises(TypeError, SqlRepresentableType)
-        class MySqlReprType(SqlRepresentableType):
-            _columns = {'foo': str}
-        self.assertIsInstance(MySqlReprType(), MySqlReprType)
+class TestSqlRepresentableType(TestCase):
+    def setUp(self):
+        class TestSqlType(SqlRepresentableType):
+            _col_types = {
+                'stringy': str, 'floaty': float, 'looong': long, 'inty': int}
+            _col_attrs = {'stringy': 'UNIQUE'}
+        self.cls = TestSqlType
+        self.schema_string = (
+            'floaty SINGLE, inty INTEGER, looong LONG, stringy TEXT UNIQUE')
+        self.schema_data = [
+            (0, 'floaty', 'SINGLE', 0, None, 0),
+            (1, 'inty', 'INTEGER', 0, None, 0),
+            (2, 'looong', 'LONG', 0, None, 0),
+            (3, 'stringy', 'TEXT', 0, None, 0)]
 
-    @patch('pyamp.library.sqlite3.register_converter', autospec=True)
-    def test_class_registered(self, register_converter_mock):
-        class StillAbstract(SqlRepresentableType):
-            pass
-        self.assertEqual(register_converter_mock.call_count, 0)
-        class Concrete(SqlRepresentableType):
-            _columns = {'bar': int}
-        register_converter_mock.assert_called_once_with(
-            'Concrete', Concrete._convert_from_sql)
+    def test_construction(self):
+        attr_names = self.cls._col_attrs.keys()
+        plain = self.cls()
+        for name in attr_names:
+            self.assertIsNone(getattr(plain, name))
+        argy = self.cls(1.0, 2L, 3, '4')
+        self.assertEqual(argy.floaty, 1.0)
+        self.assertEqual(argy.inty, 2)
+        self.assertEqual(argy.looong, 3L)
+        self.assertEqual(argy.stringy, '4')
+        missing_argy = self.cls(1.0)
+        self.assertEqual(missing_argy.floaty, 1.0)
+        for name in ('inty', 'looong', 'stringy'):
+            self.assertIsNone(getattr(missing_argy, name))
+        data = {'looong': 40L, 'floaty': 30.0, 'inty': 20, 'stringy': '10'}
+        dicty = self.cls(data)
+        for k, v in data.iteritems():
+            self.assertEqual(getattr(dicty, k), v)
+
+    def test_get_col_names(self):
+        names = ['floaty', 'inty', 'looong', 'stringy']
+        self.assertEqual(self.cls._get_col_names(), names)
+        instance = self.cls()
+        self.assertEqual(instance._get_col_names(), names)
+
+    def test_len(self):
+        instance = self.cls()
+        self.assertEqual(len(instance), 4)
+
+    def test_getitem(self):
+        def check():
+            for i, expected_type in enumerate((float, int, long, str)):
+                self.assertEqual(instance[i], expected_type(i))
+        instance = self.cls(0, 1, 2, 3)
+        check()
+        instance = self.cls()
+        instance.inty = 1
+        instance.floaty = 0.0
+        instance.stringy = '3'
+        instance.looong = 2L
+        check()
+
+    def test_setattr(self):
+        for instance in (self.cls(), self.cls(9, 9, 9, 9)):
+            for name, type_ in self.cls._col_types.iteritems():
+                setattr(instance, name, 1)
+                self.assertIsInstance(getattr(instance, name), type_)
+                self.assertEqual(getattr(instance, name), type_(1))
+                setattr(instance, name, None)
+                self.assertIsNone(getattr(instance, name))
+        self.assertRaises(AttributeError, lambda: setattr(instance, 'bob', 15))
+
+    def test_get_schema(self):
+        self.assertEqual(self.cls._get_schema(), self.schema_string)
+        instance = self.cls()
+        self.assertEqual(instance._get_schema(), self.schema_string)
+
+    def test_iter_schema(self):
+        for result, expected in zip(self.cls._iter_schema(), self.schema_data):
+            self.assertEqual(result, expected)
+        for result, expected in zip(
+                self.cls()._iter_schema(), self.schema_data):
+            self.assertEqual(result, expected)
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_create_table(self, mock_cursor):
+        self.cls.create_table(mock_cursor)
+        mock_cursor.execute.assert_called_once_with(
+            'CREATE TABLE TestSqlType({})'.format(self.schema_string))
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    # FIXME: don't seem to autospec classmethods and them be callable :-(
+    @patch('pyamp.library.SqlRepresentableType.create_table')
+    @patch('pyamp.library.SqlRepresentableType.drop_table')
+    def test_create_table_if_required(
+            self, mock_drop_table, mock_create_table, mock_cursor):
+        mock_cursor.fetchall.return_value = self.schema_data
+        self.cls.create_table_if_required(mock_cursor)
+        mock_cursor.execute.assert_called_once_with(
+            'PRAGMA table_info(TestSqlType)')
+        self.assertEqual(mock_create_table.call_count, 0)
+        self.assertEqual(mock_drop_table.call_count, 0)
+
+        self.schema_data[2] = (2, 'interloper', 'LONG', 0, None, 0)
+        self.cls.create_table_if_required(mock_cursor)
+        self.assertEqual(mock_create_table.call_count, 1)
+        self.assertEqual(mock_drop_table.call_count, 1)
+
+        self.schema_data[2] = (2, 'looong', 'TEXT', 0, None, 0)
+        self.cls.create_table_if_required(mock_cursor)
+        self.assertEqual(mock_create_table.call_count, 2)
+        self.assertEqual(mock_drop_table.call_count, 2)
+
+        del self.schema_data[2]
+        self.cls.create_table_if_required(mock_cursor)
+        self.assertEqual(mock_create_table.call_count, 3)
+        self.assertEqual(mock_drop_table.call_count, 3)
+
+        mock_cursor.fetchall.return_value = None
+        self.cls.create_table_if_required(mock_cursor)
+        self.assertEqual(mock_create_table.call_count, 4)
+        self.assertEqual(mock_drop_table.call_count, 3)
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_drop_table(self, mock_cursor):
+        self.cls.drop_table(mock_cursor)
+        mock_cursor.execute.assert_called_once_with(
+            'DROP TABLE TestSqlType')
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_insert_or_replace(self, mock_cursor):
+        instance = self.cls(7, 42, 121, 1024)
+        instance.insert_or_replace(mock_cursor)
+        mock_cursor.execute.assert_called_once_with(
+            'INSERT OR REPLACE INTO TestSqlType(floaty, inty, looong, stringy'
+            ') VALUES (?, ?, ?, ?)',
+            instance)
 
 
 class TestTrackMetadata(TestCase):
@@ -38,33 +151,6 @@ class TestTrackMetadata(TestCase):
         self.assertIsNone(metadata.title)
         self.assertEqual(metadata.artist, 'Paul')
 
-    def test_conform_and_convert(self):
-        metadata = TrackMetadata({'artist': 'Paul', 'bitrate': 32000})
-        sql = ';Paul;;32000;;;;;;;;;;'
-        self.assertIsNone(metadata.__conform__('random_protocol'))
-        self.assertEqual(metadata.__conform__(sqlite3.PrepareProtocol), sql)
-        metadata = TrackMetadata._convert_from_sql(sql)
-        self.assertIsInstance(metadata, TrackMetadata)
-        self.assertEqual(metadata.artist, 'Paul')
-        self.assertEqual(metadata.bitrate, 32000)
-        self.assertIsNone(metadata.genre)
 
-
-class TestSqlSchema(TestCase):
-    def setUp(self):
-        self.columns = {'foo': str, 'bar': int, 'baz': long, 'floaty': float}
-        self.schema = SqlSchema('Test', self.columns)
-
-    def test_sql_schema_str(self):
-        self.schema.set_column_attributes('bar', 'UNIQUE')
-        self.assertEqual(
-            str(self.schema),
-            'Test(bar INTEGER UNIQUE, baz LONG, floaty SINGLE, foo TEXT)')
-
-    def test_sql_schema_eq(self):
-        new_schema = SqlSchema('Wrong', {'deffo_not': str, 'equal': str})
-        self.assertNotEqual(new_schema, self.schema)
-        new_schema = SqlSchema('Right', self.columns)
-        self.assertEqual(new_schema, self.schema)
-        self.schema.set_column_attributes('bar', 'UNIQUE')
-        self.assertEqual(new_schema, self.schema)
+class TestLibrary(TestCase):
+    pass

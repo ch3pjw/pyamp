@@ -149,7 +149,7 @@ def main():
         d.addCallback(lambda _: library.search_tracks(sys.argv[1]))
         @d.addCallback
         def search_track(result):
-            interface.player.set_file(result[0][0])
+            interface.player.set_file(result[0].file_path)
             interface.player.play()
     interface.run()
 

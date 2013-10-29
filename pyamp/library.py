@@ -1,84 +1,187 @@
 import os
 import sqlite3
-from collections import namedtuple
 from functools import wraps
 from twisted.internet import threads
-from abc import ABCMeta, abstractproperty
+from abc import abstractproperty
 
 from base import PyampBase
 from player import gst
 
 
-class SqlRepresentableTypeMeta(ABCMeta):
-    '''We define a metaclass so that any SqlRepresentableType we define will
-    automatically be registered as a converter for the sqlite3 module, and so
-    that we can dynamically define __slots__ based on the value of the
-    sub-class's attributes.
-    '''
-    def __new__(metacls, name, bases, attrs):
-        if metacls._is_concrete(attrs):
-            attrs['__slots__'] = sorted(attrs['_columns'].keys())
-        return super(SqlRepresentableTypeMeta, metacls).__new__(
-            metacls, name, bases, attrs)
-
-    def __init__(cls, name, bases, attrs):
-        super(cls.__metaclass__, cls).__init__(name, bases, attrs)
-        if cls.__metaclass__._is_concrete(attrs):
-            sqlite3.register_converter(name, cls._convert_from_sql)
-
-    @staticmethod
-    def _is_concrete(attrs):
-        '''Is the class we're creating a concrete example of an
-        SqlRepresentableType?
+class SqlRepresentableType(PyampBase):
+    @abstractproperty
+    def _col_types(self):
+        '''`dict`-like object listing key-value pairs of all column names and
+        their Python data type.
         '''
-        _columns = attrs.get('_columns')
-        return _columns and not isinstance(_columns, abstractproperty)
-
-
-class SqlRepresentableType(object):
-    __metaclass__ = SqlRepresentableTypeMeta
 
     @abstractproperty
-    def _columns(self):
-        '''`dict`-like object listing key-value pairs of column name and Python
-        data type.
+    def _col_attrs(self):
+        '''`dict`-like object listing string of attributes associated with a
+        given column.
         '''
 
-    __slots__ = []
+    _python_to_sql_type = {
+        str: 'TEXT',
+        int: 'INTEGER',
+        long: 'LONG',
+        float: 'SINGLE'}
 
     def __init__(self, *args):
-        for col_name in self.__slots__:
-            setattr(self, col_name, None)
-        for col_name, col_data in zip(self.__slots__, args):
-            setattr(self, col_name, col_data)
-
-    def __setattr__(self, col_name, value):
-        '''We make cheeky use of slots here to define limit what attributes
-        make up track metadata. We intercept __setattr__ here (N.B. *not*
-        __setattribute__, which is not defined on a class with __slots__) to do
-        data sanitation on every value assignment.
-        '''
-        member_descriptor = getattr(self.__class__, col_name)
-        if value is not None:
-            value = self._columns[col_name](value)
-        member_descriptor.__set__(self, value)
-
-    def __conform__(self, protocol):
-        if protocol is sqlite3.PrepareProtocol:
-            strings = []
-            for col_name in self.__slots__:
-                col_data = getattr(self, col_name)
-                col_data = str(col_data) if col_data is not None else ''
-                strings.append(col_data)
-            return ';'.join(strings)
+        for col_name in self._col_types:
+            self.__dict__[col_name] = None
+        try:
+            dict_like = args[0]
+            # dict-like might be a gst.TagList object, which only has .keys()
+            for attr_name in dict_like.keys():
+                safe_attr_name = attr_name.replace('-', '_')
+                setattr(self, safe_attr_name, dict_like[attr_name])
+        except (IndexError, AttributeError):
+            for col_name, col_data in zip(self._get_col_names(), args):
+                setattr(self, col_name, col_data)
 
     @classmethod
-    def _convert_from_sql(cls, row):
-        return cls(*[d if d else None for d in row.split(';')])
+    def _get_col_names(cls):
+        return sorted(cls._col_types.keys())
+
+    def __len__(self):
+        return len(self._col_types)
+
+    def __getitem__(self, index):
+        attr_name = self._get_col_names()[index]
+        return getattr(self, attr_name)
+
+    def __setattr__(self, col_name, value):
+        '''We override setattr so that only tag-named attributes can be set,
+        and so that we can sanitise that data before it's stored.
+        '''
+        if col_name not in self._col_types:
+            raise AttributeError('{!r} object has no attribute {!r}'.format(
+                self.__class__.__name__, col_name))
+        if value is not None:
+            value = self._col_types[col_name](value)
+        self.__dict__[col_name] = value
+
+    @classmethod
+    def _get_schema(cls):
+        rows = []
+        for col_name in cls._get_col_names():
+            row = [col_name]
+            row.append(cls._python_to_sql_type[cls._col_types[col_name]])
+            attrs = cls._col_attrs.get(col_name)
+            if attrs:
+                row.append(attrs)
+            rows.append(' '.join(row))
+        return ', '.join(rows)
+
+    @classmethod
+    def _iter_schema(cls):
+        for i, col_name in enumerate(cls._get_col_names()):
+            col_type = cls._python_to_sql_type[cls._col_types[col_name]]
+            yield i, col_name, col_type, 0, None, 0
+
+    @classmethod
+    def create_table(cls, cursor):
+        cls.log.debug('Creating new {} table'.format(cls.__name__))
+        cursor.execute('CREATE TABLE {}({})'.format(
+            cls.__name__, cls._get_schema()))
+
+    @classmethod
+    def create_table_if_required(cls, cursor):
+        cursor.execute('PRAGMA table_info({})'.format(cls.__name__))
+        result = cursor.fetchall()
+        if result:
+            cls.log.debug('Found existing {} table'.format(cls.__name__))
+            if len(result) == len(cls._col_types):
+                for file_column, schema_column in zip(
+                        result, cls._iter_schema()):
+                    if file_column != schema_column:
+                        break
+                else:
+                    cls.log.debug('{} table conforms to schema'.format(
+                        cls.__name__))
+                    return
+            cls.log.warning(
+                '{} table does not conform to schema'.format(cls.__name__))
+            cls.drop_table(cursor)
+        cls.create_table(cursor)
+
+    @classmethod
+    def drop_table(cls, cursor):
+        cls.log.debug('Dropping {} table'.format(cls.__name__))
+        cursor.execute('DROP TABLE {}'.format(cls.__name__))
+
+    def insert_or_replace(self, cursor):
+        value_placeholder = ', '.join('?' * len(self))
+        col_names_placeholder = ', '.join(self._get_col_names())
+        cursor.execute(
+            'INSERT OR REPLACE INTO {}({}) VALUES ({})'.format(
+                self.__class__.__name__, col_names_placeholder,
+                value_placeholder),
+            self)
+
+    @classmethod
+    def _search(cls, cursor, search_dict, operator, join_keyword):
+        query_placeholder = join_keyword.join(
+            '{} {} ?'.format(k, operator) for k in search_dict)
+        cursor.execute(
+            'SELECT * FROM {} WHERE {}'.format(
+                cls.__name__, query_placeholder),
+            search_dict.values())
+        return [cls(*row) for row in cursor.fetchall()]
+
+    @classmethod
+    def _search_one(cls, cursor, search_dict, operator, join_keyword):
+        result = cls._search(cursor, search_dict, operator, join_keyword)
+        if len(result) != 1:
+            raise ValueError(
+                'Search of {} table for {} returned {:d} hits, which is != '
+                '1'.format(cls.__name__, search_dict, len(result)))
+        else:
+            return result[0]
+
+    @classmethod
+    def exact_search(cls, cursor, search_dict, operator='='):
+        '''Searches the existing database table accessed via cursor for the
+        all of the col_name/value pairs specified in the search_dict.
+
+        :returns: A list of new instances of this class if values are found.
+        '''
+        return cls._search(cursor, search_dict, operator, ' AND ')
+
+    @classmethod
+    def exact_search_one(cls, cursor, search_dict, operator='='):
+        '''
+        :returns: The only result of an exact search or an error if there is
+            not exactly one result.
+        '''
+        return cls._search_one(cursor, search_dict, operator, ' AND ')
+
+    @classmethod
+    def search(cls, cursor, search_dict, operator='='):
+        '''Searches the existing database table accessed via cursor for the
+        any of the col_name/value pairs specified in the search_dict.
+
+        :returns: A list of new instances of this class if values are found.
+        '''
+        return cls._search(cursor, search_dict, operator, ' OR ')
+
+    @classmethod
+    def search_one(cls, cursor, search_dict, operator='='):
+        '''
+        :returns: The only result of a search or an error if there is not
+            exactly one result.
+        '''
+        return cls._search_one(cursor, search_dict, operator, ' OR ')
+
+    @classmethod
+    def list(cls, cursor):
+        cursor.execute('SELECT * FROM {}'.format(cls.__name__))
+        return [cls(*row) for row in cursor.fetchall()]
 
 
 class TrackMetadata(SqlRepresentableType):
-    _columns = {
+    _col_types = {
         'album': str,
         'artist': str,
         'audio_codec': str,
@@ -93,23 +196,15 @@ class TrackMetadata(SqlRepresentableType):
         'nominal_bitrate': str,
         'title': str,
         'track_number': int}
-
-    def __init__(self, *args):
-        if len(args) == 1:
-            tags = args[0]
-            super(TrackMetadata, self).__init__()  # No args!
-            # tags might be a gst.TagList object, which only has .keys...
-            for tag_name in tags.keys():
-                tag_name = tag_name.replace('-', '_')
-                setattr(self, tag_name, tags[tag_name])
-        else:
-            super(TrackMetadata, self).__init__(*args)
+    _col_attrs = {
+        'file_path': 'UNIQUE'}
 
 
 class Dir(SqlRepresentableType):
-    _columns = {
-        'dir_path': str,
+    _col_types = {
+        'path': str,
         'modified_time': float}
+    _col_attrs = {}
 
 
 def blocking(func):
@@ -135,135 +230,12 @@ def with_database_cursor(func):
     return func_with_cursor
 
 
-class SqlSchema(PyampBase):
-    _python_to_sql_type = {
-        str: 'TEXT',
-        int: 'INTEGER',
-        long: 'LONG',
-        float: 'SINGLE'}
-
-    def __init__(self, name, columns):
-        '''
-        :parameter name: The name of the database table.
-        :parameter columns: Dictionary in the form:
-            {<column_name>: <python data type>}
-        '''
-        super(SqlSchema, self).__init__()
-        self.name = name
-        self.types = columns
-        self.attributes = {}
-        self.namedtuple = namedtuple(name, sorted(self.types.keys()))
-
-    @property
-    def columns(self):
-        return sorted(self.types.keys())
-
-    @property
-    def value_placholder(self):
-        return ', '.join('?' * len(self.types))
-
-    @property
-    def column_placeholder(self):
-        return ', '.join(self.columns)
-
-    def create_table(self, cursor):
-        self.log.debug('Creating new {} table'.format(self.name))
-        cursor.execute('CREATE TABLE {}'.format(self))
-
-    def drop_table(self, cursor):
-        self.log.debug('Dropping {} table'.format(self.name))
-        cursor.execute('DROP TABLE {}'.format(self.name))
-
-    def insert_or_replace(self, cursor, data):
-        query = 'INSERT OR REPLACE INTO {}({}) VALUES ({})'.format(
-            self.name, self.column_placeholder, self.value_placholder)
-        cursor.execute(query, self._make_data(data))
-
-    def _make_data(self, data):
-        for name, type_ in self.types.iteritems():
-            if name in data:
-                data[name] = self.types[name](data[name])
-            else:
-                data[name] = None
-        return self.namedtuple(**data)
-
-    def set_column_attributes(self, column_name, attribute):
-        assert column_name in self.types
-        self.attributes[column_name] = attribute
-
-    def __iter__(self):
-        for column_name in self.columns:
-            yield self._get_column_schema(column_name)
-
-    def __eq__(self, sql_schema):
-        return sql_schema.types == self.types
-
-    def _get_column_schema(self, column_name):
-        type_ = self._python_to_sql_type[self.types[column_name]]
-        schema = [column_name, type_]
-        attrs = self.attributes.get(column_name)
-        if attrs:
-            schema.append(attrs)
-        return schema
-
-    def __str__(self):
-        column_schemas = [' '.join(schema) for schema in self]
-        return '{name}({fields})'.format(
-            name=self.name, fields=', '.join(column_schemas))
-
-
-def make_schema_from_existing_table(cursor, table_name):
-    _sql_to_python_type = {
-        v: k for k, v in SqlSchema._python_to_sql_type.iteritems()}
-    cursor.execute('PRAGMA table_info({})'.format(table_name))
-    result = cursor.fetchall()
-    if result:
-        schema_dict = {}
-        for column in result:
-            id_, name, type_, _, _, _ = column
-            schema_dict[name] = _sql_to_python_type[type_]
-        return SqlSchema(table_name, schema_dict)
-
-
 class Library(PyampBase):
-    _tracks_schema = SqlSchema('Tracks', {
-        'album': str,
-        'artist': str,
-        'audio_codec': str,
-        'bitrate': long,
-        'container_format': str,
-        'date': str,
-        'encoder': str,
-        'encoder_version': str,
-        'file_path': str,
-        'genre': str,
-        'modified_time': float,
-        'nominal_bitrate': str,
-        'title': str,
-        'track_number': int})
-    _tracks_schema.set_column_attributes('file_path', 'UNIQUE')
-    _dirs_schema = SqlSchema('Dirs', {
-        'dir_path': str,
-        'modified_time': float})
-    _dirs_schema.set_column_attributes('dir_path', 'UNIQUE')
-
     def __init__(self, database_file):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
         from gst import pbutils
         self.discoverer = pbutils.Discoverer(gst.SECOND)
-
-    def _make_metadata(self, file_path, gst_tags):
-        if gst_tags:
-            metadata = {}
-            for gst_tag_name in gst_tags.keys():
-                tag_name = gst_tag_name.replace('-', '_')
-                metadata[tag_name] = gst_tags[gst_tag_name]
-            metadata['file_path'] = file_path
-            file_stats = os.stat(file_path)
-            metadata['modified_time'] = file_stats.st_mtime
-            self.log.debug('Found file {}'.format(file_path))
-            return metadata
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []
@@ -280,41 +252,28 @@ class Library(PyampBase):
 
     def _do_discover_file(self, file_path):
         info = self.discoverer.discover_uri('file://' + file_path)
-        metadata = self._make_metadata(file_path, info.get_tags())
-        return metadata
-
-    def _create_table_if_required(self, cursor, sql_schema):
-        existing_schema = make_schema_from_existing_table(
-            cursor, sql_schema.name)
-        if existing_schema:
-            self.log.debug('Found existing {} table...'.format(
-                sql_schema.name))
-            if existing_schema == sql_schema:
-                self.log.debug(
-                    '{} table conforms to schema'.format(sql_schema.name))
-                return
-            else:
-                self.log.warning(
-                    '{} table does not conform to schema, dropping'.format(
-                        sql_schema.name))
-                sql_schema.drop_table(cursor)
-        sql_schema.create_table(cursor)
+        gst_tags = info.get_tags()
+        if gst_tags:
+            metadata = TrackMetadata(gst_tags)
+            metadata.file_path = file_path
+            file_stats = os.stat(file_path)
+            metadata.modified_time = file_stats.st_mtime
+            self.log.debug('Found file {}'.format(file_path))
+            return metadata
 
     def _dir_modified(self, cursor, dir_path):
         '''
         :returns: None if the `dir_path` has not been modified since we last
         indexed it, or the modified time if it has been updated.
         '''
-        cursor.execute(
-            'SELECT modified_time FROM Dirs WHERE dir_path = ?', (dir_path,))
-        result = cursor.fetchone()
-        if result:
-            stored_mtime = result[0]
-        else:
-            stored_mtime = None
         current_mtime = os.stat(dir_path).st_mtime
-        if current_mtime != stored_mtime:
+        try:
+            directory = Dir.search_one(cursor, {'path': dir_path})
+        except ValueError:
             return current_mtime
+        else:
+            if current_mtime != directory.modified_time:
+                return current_mtime
 
     def _update_dir_if_required(self, cursor, dir_path, file_names):
         result = 0
@@ -322,9 +281,9 @@ class Library(PyampBase):
         if modified_time:
             track_metadata_list = self._do_discover_dir(dir_path, file_names)
             for track_metadata in track_metadata_list:
-                self._tracks_schema.insert_or_replace(cursor, track_metadata)
-            self._dirs_schema.insert_or_replace(
-                cursor, {'dir_path': dir_path, 'modified_time': modified_time})
+                track_metadata.insert_or_replace(cursor)
+            directory = Dir({'path': dir_path, 'modified_time': modified_time})
+            directory.insert_or_replace(cursor)
             result = len(track_metadata_list)
         return result
 
@@ -333,8 +292,8 @@ class Library(PyampBase):
     def discover_on_path(self, cursor, dir_path):
         dir_path = os.path.expanduser(dir_path)
         self.log.info('Discovering new tracks on {}'.format(dir_path))
-        self._create_table_if_required(cursor, self._dirs_schema)
-        self._create_table_if_required(cursor, self._tracks_schema)
+        TrackMetadata.create_table_if_required(cursor)
+        Dir.create_table_if_required(cursor)
         tracks_visited = 0
         for cur_dir_path, sub_dir_names, file_names in os.walk(dir_path):
             tracks_visited += self._update_dir_if_required(
@@ -342,27 +301,20 @@ class Library(PyampBase):
         self.log.info(
             'Discovery complete, {:d} tracks visited'.format(tracks_visited))
 
-    def _get_search_query(self, search_string):
-        searchable_fields = 'artist', 'album', 'title'
-        query = 'SELECT file_path FROM Tracks WHERE '
-        search_portion = "{field} LIKE '%{search_string}%'"
-        search_portions = ' OR '.join(search_portion.format(
-            field=field, search_string=search_string) for field in
-            searchable_fields)
-        query += search_portions
-        return query
-
     @blocking
     @with_database_cursor
     def search_tracks(self, cursor, search_string):
-        search_query = self._get_search_query(search_string)
         self.log.debug(
-            'Performing track search with query: {}'.format(search_query))
-        cursor.execute(search_query)
-        return cursor.fetchall()
+            'Performing track search for {!r}'.format(search_string))
+        search_string = '%{}%'.format(search_string)
+        return TrackMetadata.search(
+            cursor, {
+                'artist': search_string,
+                'album': search_string,
+                'title': search_string},
+            operator='LIKE')
 
     @blocking
     @with_database_cursor
     def list_tracks(self, cursor):
-        cursor.execute('SELECT * FROM Tracks')
-        return cursor.fetchall()
+        return TrackMetadata.list(cursor)
