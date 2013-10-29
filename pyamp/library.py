@@ -3,9 +3,113 @@ import sqlite3
 from collections import namedtuple
 from functools import wraps
 from twisted.internet import threads
+from abc import ABCMeta, abstractproperty
 
 from base import PyampBase
 from player import gst
+
+
+class SqlRepresentableTypeMeta(ABCMeta):
+    '''We define a metaclass so that any SqlRepresentableType we define will
+    automatically be registered as a converter for the sqlite3 module, and so
+    that we can dynamically define __slots__ based on the value of the
+    sub-class's attributes.
+    '''
+    def __new__(metacls, name, bases, attrs):
+        if metacls._is_concrete(attrs):
+            attrs['__slots__'] = sorted(attrs['_columns'].keys())
+        return super(SqlRepresentableTypeMeta, metacls).__new__(
+            metacls, name, bases, attrs)
+
+    def __init__(cls, name, bases, attrs):
+        super(cls.__metaclass__, cls).__init__(name, bases, attrs)
+        if cls.__metaclass__._is_concrete(attrs):
+            sqlite3.register_converter(name, cls._convert_from_sql)
+
+    @staticmethod
+    def _is_concrete(attrs):
+        '''Is the class we're creating a concrete example of an
+        SqlRepresentableType?
+        '''
+        _columns = attrs.get('_columns')
+        return _columns and not isinstance(_columns, abstractproperty)
+
+
+class SqlRepresentableType(object):
+    __metaclass__ = SqlRepresentableTypeMeta
+
+    @abstractproperty
+    def _columns(self):
+        '''`dict`-like object listing key-value pairs of column name and Python
+        data type.
+        '''
+
+    __slots__ = []
+
+    def __init__(self, *args):
+        for col_name in self.__slots__:
+            setattr(self, col_name, None)
+        for col_name, col_data in zip(self.__slots__, args):
+            setattr(self, col_name, col_data)
+
+    def __setattr__(self, col_name, value):
+        '''We make cheeky use of slots here to define limit what attributes
+        make up track metadata. We intercept __setattr__ here (N.B. *not*
+        __setattribute__, which is not defined on a class with __slots__) to do
+        data sanitation on every value assignment.
+        '''
+        member_descriptor = getattr(self.__class__, col_name)
+        if value is not None:
+            value = self._columns[col_name](value)
+        member_descriptor.__set__(self, value)
+
+    def __conform__(self, protocol):
+        if protocol is sqlite3.PrepareProtocol:
+            strings = []
+            for col_name in self.__slots__:
+                col_data = getattr(self, col_name)
+                col_data = str(col_data) if col_data is not None else ''
+                strings.append(col_data)
+            return ';'.join(strings)
+
+    @classmethod
+    def _convert_from_sql(cls, row):
+        return cls(*[d if d else None for d in row.split(';')])
+
+
+class TrackMetadata(SqlRepresentableType):
+    _columns = {
+        'album': str,
+        'artist': str,
+        'audio_codec': str,
+        'bitrate': long,
+        'container_format': str,
+        'date': str,
+        'encoder': str,
+        'encoder_version': str,
+        'file_path': str,
+        'genre': str,
+        'modified_time': float,
+        'nominal_bitrate': str,
+        'title': str,
+        'track_number': int}
+
+    def __init__(self, *args):
+        if len(args) == 1:
+            tags = args[0]
+            super(TrackMetadata, self).__init__()  # No args!
+            # tags might be a gst.TagList object, which only has .keys...
+            for tag_name in tags.keys():
+                tag_name = tag_name.replace('-', '_')
+                setattr(self, tag_name, tags[tag_name])
+        else:
+            super(TrackMetadata, self).__init__(*args)
+
+
+class Dir(SqlRepresentableType):
+    _columns = {
+        'dir_path': str,
+        'modified_time': float}
 
 
 def blocking(func):
