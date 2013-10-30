@@ -4,9 +4,9 @@ from setuptools import setup
 
 try:
     print 'Testing gstreamer python support...'
-    import pygst
-    pygst.require('0.10')
-    import gst
+    import gi
+    gi.require_version('Gst', '1.0')
+    from gi.repository import Gst
 except ImportError:
     sys.exit("Cannot install pyamp, no gstreamer python bindings present")
 

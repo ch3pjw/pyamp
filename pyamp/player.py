@@ -1,15 +1,13 @@
 import os
 from functools import wraps
 
-import pygst
-pygst.require('0.10')
-# The gst module needs to be imported after we've set up some environment:
-from util import ModuleProxy
-gst = ModuleProxy()
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 from base import PyampBase
 from keyboard import bindable
-from util import clamp
+from util import clamp, moving_window
 
 
 def gst_log_calls(func):
@@ -42,19 +40,26 @@ class Player(PyampBase):
 
     @gst_log_calls
     def _setup_gstreamer_pipeline(self):
-        self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
+        Gst.init(None)
+        element_factory = Gst.ElementFactory()
+        self.pipeline = element_factory.make('playbin', 'pyamp_playbin')
 
-        self.volume = gst.element_factory_make('volume', 'pyamp_volume')
-        self.master_fade = gst.element_factory_make(
+        self.volume = element_factory.make('volume', 'pyamp_volume')
+        self.master_fade = element_factory.make(
             'volume', 'pyamp_master_fade')
-        self.audiosink = gst.element_factory_make(
+        self.audiosink = element_factory.make(
             'autoaudiosink', 'pyamp_audiosink')
 
-        self.sink_bin = gst.Bin('audio_sink_bin')
-        self.sink_bin.add_many(self.volume, self.master_fade, self.audiosink)
-        gst.element_link_many(self.volume, self.master_fade, self.audiosink)
+        self.sink_bin = Gst.Bin()
+        self.sink_bin.set_name('pyamp_audio_sink_bin')
+        for element in (self.volume, self.master_fade, self.audiosink):
+            self.sink_bin.add(element)
+        for source, destination in moving_window(
+                (self.volume, self.master_fade, self.audiosink)):
+            source.link(destination)
         pad = self.volume.get_static_pad('sink')
-        ghost_pad = gst.GhostPad('sink', pad)
+        ghost_pad = Gst.GhostPad()
+        ghost_pad.set_target(pad)
         ghost_pad.set_active(True)
         self.sink_bin.add_pad(ghost_pad)
 
