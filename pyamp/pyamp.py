@@ -104,6 +104,7 @@ class UI(PyampBase):
             with self.terminal.hidden_cursor():
                 with self.terminal.unbuffered_input():
                     signal.signal(signal.SIGINT, self._handle_sigint)
+                    signal.signal(signal.SIGTSTP, self.terminal.handle_sigtstp)
                     self.looping_call = task.LoopingCall(self.update)
                     self.looping_call.start(1 / 20)
                     stdio.StandardIO(InputReader(self))
