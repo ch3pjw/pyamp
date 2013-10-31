@@ -5,6 +5,17 @@ import signal
 import os
 import logging
 from contextlib import contextmanager
+from functools import wraps
+
+
+def override_sugar(func):
+    attr_name = func.__name__
+    @property
+    @wraps(func)
+    def func_which_uses_terminal_sugar(self):
+        func(self)
+        return self.__getattr__(attr_name)
+    return func_which_uses_terminal_sugar
 
 
 class Terminal(blessings.Terminal):
@@ -17,6 +28,21 @@ class Terminal(blessings.Terminal):
             self._orig_tty_attrs = None
         self._is_fullscreen = False
         self._has_hidden_cursor = False
+        self._resolved_sugar_cache = {}
+
+    def __getattr__(self, attr):
+        # We override ___getattr__ so that we don't do blessings' annoying
+        # caching by attribute-setting side-effect! This means we can override
+        # sugar without fear!
+        try:
+            return self._resolved_sugar_cache[attr]
+        except KeyError:
+            if self._does_styling:
+                resolution = self._resolve_formatter(attr)
+            else:
+                resolution = blessings.NullCallableString()
+            self._resolved_sugar_cache[attr] = resolution
+            return resolution
 
     @contextmanager
     def unbuffered_input(self):
@@ -35,40 +61,35 @@ class Terminal(blessings.Terminal):
         else:
             yield
 
-    @contextmanager
-    def fullscreen(self):
-        # Monkey patching this was harder and more verbose than rewriting it,
-        # plus, we have to know how to set fullscreen manually anyway, so tha
-        # API is fine.
-        self.stream.write(self.enter_fullscreen)
+    @override_sugar
+    def enter_fullscreen(self):
         self._is_fullscreen = True
-        try:
-            yield
-        finally:
-            self.stream.write(self.exit_fullscreen)
-            self._is_fullscreen = False
 
-    @contextmanager
-    def hidden_cursor(self):
-        # Monkey patching this was also harder and more error prone than
-        # re-writing it!
-        self.stream.write(self.hide_cursor)
+    @override_sugar
+    def exit_fullscreen(self):
+        self._is_fullscreen = False
+
+    @override_sugar
+    def hide_cursor(self):
         self._has_hidden_cursor = True
-        try:
-            yield
-        finally:
-            self.stream.write(self.normal_cursor)
-            self._has_hidden_cursor = False
+
+    @override_sugar
+    def normal_cursor(self):
+        self._has_hidden_cursor = False
 
     def handle_sigtstp(self, sig_num, stack_frame):
         self.log.info('Handling SIGTSTP for suspend...')
+        # Store current state:
         if self.is_a_tty:
             cur_tty_attrs = termios.tcgetattr(self.stream)
             termios.tcsetattr(
                 self.stream, termios.TCSADRAIN, self._orig_tty_attrs)
-        if self._is_fullscreen:
+        is_fullscreen = self._is_fullscreen
+        has_hidden_cursor = self._has_hidden_cursor
+        # Restore normal terminal state:
+        if is_fullscreen:
             self.stream.write(self.exit_fullscreen)
-        if self._has_hidden_cursor:
+        if has_hidden_cursor:
             self.stream.write(self.normal_cursor)
         self.stream.flush()
         # Unfortunately, we have to remove our signal handler and
@@ -82,9 +103,9 @@ class Terminal(blessings.Terminal):
             if self.is_a_tty:
                 termios.tcsetattr(
                     self.stream, termios.TCSADRAIN, cur_tty_attrs)
-            if self._is_fullscreen:
+            if is_fullscreen:
                 self.stream.write(self.enter_fullscreen)
-            if self._has_hidden_cursor:
+            if has_hidden_cursor:
                 self.stream.write(self.hide_cursor)
         signal.signal(signal.SIGCONT, restore_on_sigcont)
         os.kill(os.getpid(), signal.SIGTSTP)
