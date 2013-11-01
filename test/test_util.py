@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from pyamp.util import clamp
+from pyamp.util import clamp, moving_window
 
 
 class TestUtil(TestCase):
@@ -18,3 +18,8 @@ class TestUtil(TestCase):
         self.assertEqual(clamp(-121, min_=13), 13)
         self.assertEqual(clamp(121, max_=13), 13)
         self.assertEqual(clamp(-121, max_=13), -121)
+
+    def test_moving_window(self):
+        expected = [(1, 2), (2, 3), (3, 4), (4, 5)]
+        for actual, expected in zip(moving_window([1, 2, 3, 4, 5]), expected):
+            self.assertEqual(actual, expected)
