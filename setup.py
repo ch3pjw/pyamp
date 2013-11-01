@@ -31,5 +31,10 @@ setup(
     entry_points={
         'console_scripts': ['pyamp = pyamp.pyamp:main']},
     extras_require={
-        'development': ['pep8', 'mock', 'nose', 'nose-progressive']}
+        'development': [
+            'pep8',
+            'mock',
+            'nose',
+            'nose-progressive',
+            'coverage']}
 )
