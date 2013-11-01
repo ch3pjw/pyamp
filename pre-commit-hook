@@ -50,4 +50,4 @@ fi
 set -e
 # If there are whitespace errors, print the offending file names and fail.
 git diff-index --check --cached $against --
-nosetests $(git rev-parse --show-toplevel)
+nosetests $(git rev-parse --show-toplevel)/test
