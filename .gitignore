@@ -4,3 +4,6 @@
 *.pyc
 *.egg-info
 .ropeproject
+.coverage
+htmlcov
+test/total_coverage
