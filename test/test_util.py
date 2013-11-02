@@ -3,7 +3,7 @@ from unittest import TestCase
 import asyncio
 import threading
 
-from pyamp.util import clamp, LoopingCall, threaded_future
+from pyamp.util import clamp, moving_window, LoopingCall, threaded_future
 
 
 class TestUtil(TestCase):
@@ -21,6 +21,11 @@ class TestUtil(TestCase):
         self.assertEqual(clamp(-121, min_=13), 13)
         self.assertEqual(clamp(121, max_=13), 13)
         self.assertEqual(clamp(-121, max_=13), -121)
+
+    def test_moving_window(self):
+        expected = [(1, 2), (2, 3), (3, 4), (4, 5)]
+        for actual, expected in zip(moving_window([1, 2, 3, 4, 5]), expected):
+            self.assertEqual(actual, expected)
 
     def test_looping_call(self):
         result = []

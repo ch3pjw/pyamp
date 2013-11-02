@@ -1,60 +1,42 @@
 import os
-from functools import wraps
 
-#import pygst
-#pygst.require('0.10')
-# The gst module needs to be imported after we've set up some environment:
-from .util import ModuleProxy
-gst = ModuleProxy()
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 from .base import PyampBase
 from .keyboard import bindable
-from .util import clamp
-
-
-def gst_log_calls(func):
-    '''Decorator to make `func` log it's calls and arguments to the gstreamer
-    log file.
-    '''
-    @wraps(func)
-    def logging_func(*args, **kwargs):
-        gst.info(' {} '.format(func.__name__).center(35, '-'))
-        gst.info('called with args: {}, kwargs: {}'.format(args, kwargs))
-        result = func(*args, **kwargs)
-        gst.info('{} result: {}'.format(func.__name__, result))
-        gst.info('-' * 35)
-        return result
-    return logging_func
+from .util import clamp, moving_window
 
 
 class Player(PyampBase):
     def __init__(self, initial_volume=1):
         super(Player, self).__init__()
-        # Because someone else may be responsible for setting up the
-        # environment before gst import, we do the import here, which is as
-        # late as possible, and pretend to the rest of the world like gst was
-        # here all along :-s
-        import gst as gstreamer
-        gst.module = gstreamer
         self.target_volume = initial_volume
         self._setup_gstreamer_pipeline()
         self.tags = {'title': ''}
 
-    @gst_log_calls
     def _setup_gstreamer_pipeline(self):
-        self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
+        Gst.init(None)
+        element_factory = Gst.ElementFactory()
+        self.pipeline = element_factory.make('playbin', 'pyamp_playbin')
 
-        self.volume = gst.element_factory_make('volume', 'pyamp_volume')
-        self.master_fade = gst.element_factory_make(
+        self.volume = element_factory.make('volume', 'pyamp_volume')
+        self.master_fade = element_factory.make(
             'volume', 'pyamp_master_fade')
-        self.audiosink = gst.element_factory_make(
+        self.audiosink = element_factory.make(
             'autoaudiosink', 'pyamp_audiosink')
 
-        self.sink_bin = gst.Bin('audio_sink_bin')
-        self.sink_bin.add_many(self.volume, self.master_fade, self.audiosink)
-        gst.element_link_many(self.volume, self.master_fade, self.audiosink)
+        self.sink_bin = Gst.Bin()
+        self.sink_bin.set_name('pyamp_audio_sink_bin')
+        for element in (self.volume, self.master_fade, self.audiosink):
+            self.sink_bin.add(element)
+        for source, destination in moving_window(
+                (self.volume, self.master_fade, self.audiosink)):
+            source.link(destination)
         pad = self.volume.get_static_pad('sink')
-        ghost_pad = gst.GhostPad('sink', pad)
+        ghost_pad = Gst.GhostPad()
+        ghost_pad.set_target(pad)
         ghost_pad.set_active(True)
         self.sink_bin.add_pad(ghost_pad)
 
@@ -127,23 +109,19 @@ class Player(PyampBase):
     def update(self):
         self._handle_messages()
 
-    @gst_log_calls
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
         self.pipeline.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
-    @gst_log_calls
     def play(self):
         self.state = gst.STATE_PLAYING
 
     @bindable
-    @gst_log_calls
     def pause(self):
         self.state = gst.STATE_PAUSED
 
     @bindable
-    @gst_log_calls
     def play_pause(self):
         if self.playing:
             self.pause()
@@ -151,11 +129,9 @@ class Player(PyampBase):
             self.play()
 
     @bindable
-    @gst_log_calls
     def stop(self):
         self.state = gst.STATE_NULL
 
-    @gst_log_calls
     def fade(self, level, duration):
         position = self.get_position() + (duration * gst.SECOND)
         self.fade_controller.set('volume', position, level)
@@ -168,7 +144,6 @@ class Player(PyampBase):
     def fade_in(self, duration=0.5):
         self.fade(1, duration)
 
-    @gst_log_calls
     def change_volume(self, delta):
         position = self.get_position() + (0.33 * gst.SECOND)
         self.target_volume = clamp(self.target_volume + delta, 0, 1)
@@ -182,7 +157,6 @@ class Player(PyampBase):
     def volume_up(self):
         self.change_volume(delta=0.1)
 
-    @gst_log_calls
     def seek(self, step):
         '''
         :parameter step: the time, in nanoseconds, to move in the currently

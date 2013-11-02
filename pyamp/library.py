@@ -2,9 +2,9 @@ import os
 import sqlite3
 from functools import wraps
 from abc import abstractproperty
+from gi.repository import Gst
 
 from .base import PyampBase
-from .player import gst
 from .util import threaded_future
 
 
@@ -235,7 +235,7 @@ class Library(PyampBase):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
         from gst import pbutils
-        self.discoverer = pbutils.Discoverer(gst.SECOND)
+        self.discoverer = pbutils.Discoverer(Gst.SECOND)
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []
