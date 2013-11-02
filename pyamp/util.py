@@ -11,6 +11,8 @@ class ModuleProxy(object):
 
 
 def clamp(value, min_=None, max_=None):
+    if min_ is None and max_ is None:
+        return value
     if min_ is None:
         min_ = min(value, max_)
     if max_ is None:

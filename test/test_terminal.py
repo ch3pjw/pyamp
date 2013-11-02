@@ -1,6 +1,6 @@
 from unittest import TestCase
 from mock import patch
-from StringIO import StringIO
+from io import StringIO
 
 import blessings
 import signal

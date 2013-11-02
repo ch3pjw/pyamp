@@ -54,7 +54,7 @@ class TestUserConfig(TestCase):
         try:
             user_config.loafers
         except AttributeError as e:
-            self.assertIn('loafers', e.message)
+            self.assertIn('loafers', str(e))
 
     def test_dir(self):
         user_config = UserConfig(self.default_config_data)
@@ -81,10 +81,11 @@ class TestUserConfig(TestCase):
 
     def test_iter(self):
         user_config = UserConfig(self.default_config_data)
-        user_config_output = [tup for tup in user_config]
-        self.assertItemsEqual(user_config_output, [
-            (k, v) for k, v in self.default_config_data.iteritems() if
+        user_config_output = sorted([tup for tup in user_config])
+        expected_config = sorted([
+            (k, v) for k, v in self.default_config_data.items() if
             k != 'update'])
+        self.assertEqual(user_config_output, expected_config)
         self.assertIsInstance(dict(user_config_output)['shields'], UserConfig)
 
     def test_update(self):

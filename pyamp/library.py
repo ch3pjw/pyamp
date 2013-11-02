@@ -23,8 +23,7 @@ class SqlRepresentableType(PyampBase):
 
     _python_to_sql_type = {
         str: 'TEXT',
-        int: 'INTEGER',
-        long: 'LONG',
+        int: 'LONG',
         float: 'SINGLE'}
 
     def __init__(self, *args):
@@ -185,7 +184,7 @@ class TrackMetadata(SqlRepresentableType):
         'album': str,
         'artist': str,
         'audio_codec': str,
-        'bitrate': long,
+        'bitrate': int,
         'container_format': str,
         'date': str,
         'encoder': str,
