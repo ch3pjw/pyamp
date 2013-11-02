@@ -64,7 +64,7 @@ class UI(PyampBase):
         self.draw()
 
     def draw(self):
-        #print self.terminal.clear()
+        #print(self.terminal.clear())
         if self.player.playing:
             position = (self.player.get_position() or 0) / gst.SECOND
             duration = (self.player.get_duration() or 0) / gst.SECOND
@@ -74,9 +74,9 @@ class UI(PyampBase):
             self.time_check.duration = duration
         total_width = self.terminal.width - 2
         with self.terminal.location(0, self.terminal.height - 2):
-            print self.player.tags['title'].center(self.terminal.width)
-            print self.status_bar.draw(total_width, 1).center(
-                self.terminal.width),
+            print(self.player.tags['title'].center(self.terminal.width))
+            print(self.status_bar.draw(total_width, 1).center(
+                self.terminal.width), end='')
         sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
