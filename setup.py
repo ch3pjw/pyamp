@@ -29,7 +29,7 @@ setup(
     packages=[
         'pyamp'],
     package_data={
-        'pyamp': ['default.pyamp']},
+        'pyamp': ['default.config']},
     entry_points={
         'console_scripts': ['pyamp = pyamp.pyamp:main']},
     extras_require={
