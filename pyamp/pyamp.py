@@ -8,7 +8,7 @@ import logging
 import asyncio
 
 from .base import PyampBase
-from .player import Player, gst, gst_log_calls
+from .player import Player
 from .library import Library
 from .config import load_config
 from .keyboard import Keyboard, bindable, is_bindable
@@ -87,7 +87,6 @@ class UI(PyampBase):
         action()
 
     @bindable
-    @gst_log_calls
     def quit(self):
         def clean_up():
             self.player.stop()
