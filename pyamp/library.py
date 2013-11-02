@@ -234,8 +234,8 @@ class Library(PyampBase):
     def __init__(self, database_file):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
-        from gst import pbutils
-        self.discoverer = pbutils.Discoverer(Gst.SECOND)
+        #from gst import pbutils
+        #self.discoverer = pbutils.Discoverer(Gst.SECOND)
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []

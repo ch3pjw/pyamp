@@ -21,7 +21,7 @@ class UI(PyampBase):
     def __init__(self, user_config, event_loop=None):
         super(UI, self).__init__()
         self.user_config = user_config
-        self.event_loop = event_loop or asyncio.get_event_loop()
+        self.loop = event_loop or asyncio.get_event_loop()
         self.player = Player(initial_volume=user_config.persistent.volume)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
@@ -44,7 +44,7 @@ class UI(PyampBase):
         bindable_funcs = self._create_bindable_funcs_map()
         key_bindings = {}
         for func_name, keys in self.user_config.key_bindings:
-            if isinstance(keys, basestring):
+            if isinstance(keys, str):
                 keys = [keys]
             for key in keys:
                 key = ' '.join(key.split())
@@ -90,10 +90,10 @@ class UI(PyampBase):
     def quit(self):
         def clean_up():
             self.player.stop()
-            self.reactor.stop()
+            self.loop.stop()
         if self.player.playing:
             fade_out_time = 1
-            self.player.fade_out(fade_out_time)
+            #self.player.fade_out(fade_out_time)
             self.loop.call_later(fade_out_time + 0.1, clean_up)
         else:
             clean_up()
