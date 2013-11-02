@@ -116,6 +116,7 @@ class Player(PyampBase):
 
     @bindable
     def play(self):
+        self.log.info('Playing...')
         self.state = Gst.State.PLAYING
 
     @bindable

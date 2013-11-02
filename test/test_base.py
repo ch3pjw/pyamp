@@ -15,7 +15,7 @@ class TestPyampBaseMeta(TestCase):
         foo = Foo()
         self.assertTrue(hasattr(foo, 'log'))
         self.assertIs(foo.log, Foo.log)
-        self.assertEqual(foo.log.name, Foo.__name__)
+        self.assertEqual(foo.log.name, 'pyamp.' + Foo.__name__)
 
     def test_abstract_base_class(self):
         class Bar(metaclass=PyampBaseMeta):

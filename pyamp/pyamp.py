@@ -8,6 +8,7 @@ import os
 import signal
 import logging
 import asyncio
+asyncio.log.logger.setLevel('INFO')
 
 from .base import PyampBase
 from .player import Player
@@ -134,7 +135,7 @@ def set_up_environment(user_config):
         filename=user_config.system.log_file,
         filemode='w',
         level=getattr(logging, user_config.system.log_level.upper()),
-        format='[%(asctime)s %(levelname)s] %(message)s',
+        format='[%(asctime)s %(name)s %(levelname)s] %(message)s',
         datefmt='%H:%M:%S')
     os.stat_float_times(True)
 
