@@ -5,8 +5,7 @@ import sys
 import os
 import signal
 import logging
-
-from twisted.internet import reactor, task, protocol, stdio
+import asyncio
 
 from .base import PyampBase
 from .player import Player, gst, gst_log_calls
@@ -15,13 +14,14 @@ from .config import load_config
 from .keyboard import Keyboard, bindable, is_bindable
 from .terminal import Terminal
 from .ui import HorizontalContainer, ProgressBar, TimeCheck
+from .util import LoopingCall
 
 
 class UI(PyampBase):
-    def __init__(self, user_config, reactor=reactor):
+    def __init__(self, user_config, event_loop=None):
         super(UI, self).__init__()
         self.user_config = user_config
-        self.reactor = reactor
+        self.event_loop = event_loop or asyncio.get_event_loop()
         self.player = Player(initial_volume=user_config.persistent.volume)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
@@ -95,7 +95,7 @@ class UI(PyampBase):
         if self.player.playing:
             fade_out_time = 1
             self.player.fade_out(fade_out_time)
-            reactor.callLater(fade_out_time + 0.1, clean_up)
+            self.loop.call_later(fade_out_time + 0.1, clean_up)
         else:
             clean_up()
 
@@ -105,18 +105,20 @@ class UI(PyampBase):
                 with self.terminal.unbuffered_input():
                     signal.signal(signal.SIGINT, self._handle_sigint)
                     signal.signal(signal.SIGTSTP, self.terminal.handle_sigtstp)
-                    self.looping_call = task.LoopingCall(self.update)
+                    self.looping_call = LoopingCall(self.update)
                     self.looping_call.start(1 / 20)
-                    stdio.StandardIO(InputReader(self))
-                    self.reactor.run()
+                    task = self.loop.connect_read_pipe(
+                        lambda: InputReader(self),
+                        asyncio.STDIN)
+                    self.loop.run_forever()
 
 
-class InputReader(protocol.Protocol):
+class InputReader(asyncio.Protocol):
     def __init__(self, ui):
         self.ui = ui
         self.keyboard = Keyboard()
 
-    def dataReceived(self, data):
+    def data_received(self, data):
         key_name = self.keyboard[data]
         self.ui.handle_input(key_name)
 

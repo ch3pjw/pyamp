@@ -1,11 +1,11 @@
 import os
 import sqlite3
 from functools import wraps
-from twisted.internet import threads
 from abc import abstractproperty
 
 from .base import PyampBase
 from .player import gst
+from .util import threaded_future
 
 
 class SqlRepresentableType(PyampBase):
@@ -208,12 +208,13 @@ class Dir(SqlRepresentableType):
 
 
 def blocking(func):
-    '''Decorator to defer a blocking method to a thread.
+    '''Decorator to execute a blocking method in a thread and wrap the
+    management in a future.
     '''
     @wraps(func)
-    def deferred_to_thread(*args, **kwargs):
-        return threads.deferToThread(func, *args, **kwargs)
-    return deferred_to_thread
+    def non_blocking_call(*args, **kwargs):
+        return threaded_future(func, *args, **kwargs)
+    return non_blocking_call
 
 
 def with_database_cursor(func):
