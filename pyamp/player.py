@@ -1,8 +1,8 @@
 import os
 from functools import wraps
 
-import pygst
-pygst.require('0.10')
+#import pygst
+#pygst.require('0.10')
 # The gst module needs to be imported after we've set up some environment:
 from .util import ModuleProxy
 gst = ModuleProxy()
