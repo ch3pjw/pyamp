@@ -4,8 +4,8 @@ from functools import wraps
 from twisted.internet import threads
 from abc import abstractproperty
 
-from base import PyampBase
-from player import gst
+from .base import PyampBase
+from .player import gst
 
 
 class SqlRepresentableType(PyampBase):

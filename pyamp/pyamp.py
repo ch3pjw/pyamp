@@ -8,13 +8,13 @@ import logging
 
 from twisted.internet import reactor, task, protocol, stdio
 
-from base import PyampBase
-from player import Player, gst, gst_log_calls
-from library import Library
-from config import load_config
-from keyboard import Keyboard, bindable, is_bindable
-from terminal import Terminal
-from ui import HorizontalContainer, ProgressBar, TimeCheck
+from .base import PyampBase
+from .player import Player, gst, gst_log_calls
+from .library import Library
+from .config import load_config
+from .keyboard import Keyboard, bindable, is_bindable
+from .terminal import Terminal
+from .ui import HorizontalContainer, ProgressBar, TimeCheck
 
 
 class UI(PyampBase):

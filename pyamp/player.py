@@ -4,12 +4,12 @@ from functools import wraps
 import pygst
 pygst.require('0.10')
 # The gst module needs to be imported after we've set up some environment:
-from util import ModuleProxy
+from .util import ModuleProxy
 gst = ModuleProxy()
 
-from base import PyampBase
-from keyboard import bindable
-from util import clamp
+from .base import PyampBase
+from .keyboard import bindable
+from .util import clamp
 
 
 def gst_log_calls(func):
