@@ -1,5 +1,7 @@
 #! /usr/bin/env python
-from __future__ import division
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 import sys
 import os
@@ -66,8 +68,8 @@ class UI(PyampBase):
     def draw(self):
         #print(self.terminal.clear())
         if self.player.playing:
-            position = (self.player.get_position() or 0) / gst.SECOND
-            duration = (self.player.get_duration() or 0) / gst.SECOND
+            position = (self.player.get_position() or 0) / Gst.SECOND
+            duration = (self.player.get_duration() or 0) / Gst.SECOND
             if duration:
                 self.progress_bar.fraction = position / duration
             self.time_check.position = position

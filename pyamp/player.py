@@ -1,7 +1,5 @@
 import os
 
-import gi
-gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
 from .base import PyampBase
@@ -62,9 +60,16 @@ class Player(PyampBase):
                     self.stop()
                     raise StopIteration('Track finished successfully!')
                 if message.type == Gst.MessageType.TAG:
-                    self.tags.update(message.parse_tag())
+                    self.tags.update(self._parse_tags(message.parse_tag()))
             else:
                 break
+
+    def _parse_tags(self, gst_tag_list):
+        parsed_tags = {}
+        def parse_tag(gst_tag_list, tag_name, parsed_tags):
+            parsed_tags[tag_name] = gst_tag_list.get_value_index(tag_name, 0)
+        gst_tag_list.foreach(parse_tag, parsed_tags)
+        return parsed_tags
 
     def get_duration(self):
         '''
