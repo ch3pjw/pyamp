@@ -66,14 +66,14 @@ class Keyboard(object):
 
     def _create_high_f_keys(self):
         # make normal key range:
-        high_f_seq_nums = (n for n in xrange(17, 35) if n not in (22, 27, 30))
+        high_f_seq_nums = (n for n in range(17, 35) if n not in (22, 27, 30))
         f_num_seq_num = enumerate(high_f_seq_nums, start=6)
         high_f_keys = {'\x1d[%d~' % n: 'f%d' % f for f, n in f_num_seq_num}
         return high_f_keys
 
     def _create_ctrl_keys(self):
         ctrl_keys = {}
-        for i in xrange(26):
+        for i in range(26):
             name = 'ctrl ' + chr(ord('a') + i - 1)
             sequence = chr(i)
             ctrl_keys[sequence] = name
@@ -81,7 +81,7 @@ class Keyboard(object):
 
     def _create_alt_keys(self):
         alt_keys = {}
-        for i in xrange(33, 127):
+        for i in range(33, 127):
             name = 'alt ' + chr(i)
             sequence = '\x1b{}'.format(chr(i))
             alt_keys[sequence] = name
