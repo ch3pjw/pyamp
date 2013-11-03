@@ -8,6 +8,7 @@ import os
 import signal
 import logging
 import asyncio
+import fcntl
 asyncio.log.logger.setLevel('INFO')
 
 from .base import PyampBase
@@ -21,10 +22,13 @@ from .util import LoopingCall
 
 
 class UI(PyampBase):
-    def __init__(self, user_config, event_loop=None):
+    def __init__(self, user_config, stdin=None, event_loop=None):
         super(UI, self).__init__()
         self.user_config = user_config
+        self.infile = stdin or sys.stdin
         self.loop = event_loop or asyncio.get_event_loop()
+        self.keyboard = Keyboard()
+
         self.player = Player(initial_volume=user_config.persistent.volume)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
@@ -85,8 +89,9 @@ class UI(PyampBase):
     def _handle_sigint(self, signal, frame):
         self.quit()
 
-    def handle_input(self, char):
-        action = self.key_bindings.get(char, lambda: None)
+    def handle_input(self, data):
+        keystroke = self.keyboard[data]
+        action = self.key_bindings.get(keystroke, lambda: None)
         action()
 
     @bindable
@@ -101,28 +106,28 @@ class UI(PyampBase):
         else:
             clean_up()
 
+    def _setup_terminal_input(self):
+        if hasattr(self.infile, 'fileno'):
+            # Use fcntl to set stdin to non-blocking. WARNING - this is not
+            # particularly portable!
+            flags = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
+            flags = flags | os.O_NONBLOCK
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, flags)
+        def read_stdin():
+            data = self.infile.read()
+            self.handle_input(data)
+        self.loop.add_reader(sys.stdin, read_stdin)
+
     def run(self):
         with self.terminal.fullscreen():
             with self.terminal.hidden_cursor():
                 with self.terminal.unbuffered_input():
                     signal.signal(signal.SIGINT, self._handle_sigint)
                     signal.signal(signal.SIGTSTP, self.terminal.handle_sigtstp)
+                    self._setup_terminal_input()
                     self.looping_call = LoopingCall(self.update)
                     self.looping_call.start(1 / 20)
-                    task = self.loop.connect_read_pipe(
-                        lambda: InputReader(self),
-                        asyncio.STDIN)
                     self.loop.run_forever()
-
-
-class InputReader(asyncio.Protocol):
-    def __init__(self, ui):
-        self.ui = ui
-        self.keyboard = Keyboard()
-
-    def data_received(self, data):
-        key_name = self.keyboard[data]
-        self.ui.handle_input(key_name)
 
 
 def set_up_environment(user_config):
