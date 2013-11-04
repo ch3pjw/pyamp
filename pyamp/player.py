@@ -54,7 +54,9 @@ class Player(PyampBase):
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
         while True:
-            message = bus.poll(Gst.MessageType.ANY, timeout=0.01)
+            message = bus.poll(
+                Gst.MessageType.EOS | Gst.MessageType.TAG,
+                timeout=0.01)
             if message:
                 if message.type == Gst.MessageType.EOS:
                     self.stop()
