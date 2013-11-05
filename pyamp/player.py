@@ -1,6 +1,6 @@
 import os
 
-from gi.repository import Gst
+from gi.repository import Gst, GstController
 
 from .base import PyampBase
 from .keyboard import bindable
@@ -38,18 +38,22 @@ class Player(PyampBase):
 
         self.pipeline.set_property('audio-sink', self.sink_bin)
 
-        # FIXME: The more advanced pipeline stuff does not currently work, so
-        # skip it and set up a simpler, but working player:
-        return
-
         # The controller code seems to have gone AWOL in gstreamer 1.0 :-(
-        self.volume_controller = Gst.Controller(self.volume, 'volume')
-        self.volume_controller.set_interpolation_mode(
-            'volume', Gst.INTERPOLATE_LINEAR)
+        self.volume_controller = GstController.InterpolationControlSource.new()
+        self.volume_controller.set_property(
+            'mode', GstController.InterpolationMode.LINEAR)
+        self.volume_controller.set(0 * Gst.SECOND, 0.1)
+        binding = GstController.DirectControlBinding.new(
+            self.volume, 'volume', self.volume_controller)
+        self.volume.add_control_binding(binding)
         self.volume.set_property('volume', self.target_volume)
-        self.fade_controller = Gst.Controller(self.master_fade, 'volume')
-        self.fade_controller.set_interpolation_mode(
-            'volume', Gst.INTERPOLATE_LINEAR)
+        self.fade_controller = GstController.InterpolationControlSource.new()
+        self.fade_controller.set_property(
+            'mode', GstController.InterpolationMode.CUBIC)
+        self.fade_controller.set(0 * Gst.SECOND, 0.1)
+        binding = GstController.DirectControlBinding.new(
+            self.master_fade, 'volume', self.fade_controller)
+        self.master_fade.add_control_binding(binding)
 
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
@@ -138,7 +142,7 @@ class Player(PyampBase):
 
     def fade(self, level, duration):
         position = self.get_position() + (duration * Gst.SECOND)
-        self.fade_controller.set('volume', position, level)
+        self.fade_controller.set(position, level)
 
     @bindable
     def fade_out(self, duration=0.5):

@@ -101,7 +101,7 @@ class UI(PyampBase):
             self.loop.stop()
         if self.player.playing:
             fade_out_time = 1
-            #self.player.fade_out(fade_out_time)
+            self.player.fade_out(fade_out_time)
             self.loop.call_later(fade_out_time + 0.1, clean_up)
         else:
             clean_up()
