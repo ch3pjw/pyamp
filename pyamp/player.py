@@ -1,4 +1,5 @@
 import os
+import logging
 
 from gi.repository import Gst, GstController
 
@@ -7,14 +8,72 @@ from .keyboard import bindable
 from .util import clamp, moving_window
 
 
+class SweepingInterpolationControlSource(
+        GstController.InterpolationControlSource):
+    '''This class extends the normal InterpolationControlSource to include the
+    concept of a target value, and is intended to smooth transitions to desired
+    user values. We maintain an in initial control point at t=0 with the users
+    desired value, add control points as required to execute their transition
+    on demand, and add a facility to remove those extra control points on
+    events such as track seeks, so that we don't replay their control events,
+    but instead keep to their target value.
+    '''
+    def __init__(self, target_value, scaling_factor=1, min_=0, max_=1, *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scaling_factor = scaling_factor
+        self.min = min_
+        self.max = max_
+        self._target_value = None
+        self._additional_control_point_times = []
+        self._last_set_time = 0
+        self.set_target(target_value)
+        self.log = logging.getLogger(self.__class__.__name__)
+
+    def set_target(self, target_value):
+        self._target_value = target_value
+        self.set(0, self._target_value * self.scaling_factor)
+
+    def set_sweep(self, current_time, delta_time, future_value):
+        if future_value != self._target_value:
+            if current_time > self._last_set_time:
+                self._set(current_time, self._target_value)
+            self._set(current_time + delta_time, future_value)
+            self.set_target(future_value)
+
+    def set_sweep_delta(self, current_time, delta_time, delta_value):
+        future_value = clamp(
+            self._target_value + delta_value, self.min, self.max)
+        self.set_sweep(current_time, delta_time, future_value)
+
+    def _set(self, time, value):
+        result = super().set(time, value * self.scaling_factor)
+        if result:
+            self._additional_control_point_times.append(time)
+            self._last_set_time = time
+        return result
+
+    def reset(self):
+        '''Removes all but the initial control point with the target value.
+        This should be called when one performs an operation such as a seek
+        that would otherwise replay a user's control inputs.
+        '''
+        for time in self._additional_control_point_times:
+            self.unset(time)
+        self._additional_control_point_times[:] = []
+
+
 class Player(PyampBase):
+    # Gstreamer volume goes from 0 - 1000%, so we need to scale our controller
+    # output values:
+    volume_scaling_factor = 0.1
+
     def __init__(self, initial_volume=1):
-        super(Player, self).__init__()
-        self.target_volume = initial_volume
-        self._setup_gstreamer_pipeline()
+        super().__init__()
+        self._setup_gstreamer_pipeline(initial_volume)
         self.tags = {'title': ''}
 
-    def _setup_gstreamer_pipeline(self):
+    def _setup_gstreamer_pipeline(self, initial_volume):
         Gst.init(None)
         self.pipeline = Gst.ElementFactory.make('playbin', 'pyamp_playbin')
 
@@ -38,19 +97,19 @@ class Player(PyampBase):
 
         self.pipeline.set_property('audio-sink', self.sink_bin)
 
-        # The controller code seems to have gone AWOL in gstreamer 1.0 :-(
-        self.volume_controller = GstController.InterpolationControlSource.new()
+        self.volume_controller = SweepingInterpolationControlSource(
+            target_value=initial_volume,
+            scaling_factor=self.volume_scaling_factor)
         self.volume_controller.set_property(
             'mode', GstController.InterpolationMode.LINEAR)
-        self.volume_controller.set(0 * Gst.SECOND, 0.1)
         binding = GstController.DirectControlBinding.new(
             self.volume, 'volume', self.volume_controller)
         self.volume.add_control_binding(binding)
-        self.volume.set_property('volume', self.target_volume)
-        self.fade_controller = GstController.InterpolationControlSource.new()
+
+        self.fade_controller = SweepingInterpolationControlSource(
+            target_value=1, scaling_factor=self.volume_scaling_factor)
         self.fade_controller.set_property(
             'mode', GstController.InterpolationMode.CUBIC)
-        self.fade_controller.set(0 * Gst.SECOND, 0.1)
         binding = GstController.DirectControlBinding.new(
             self.master_fade, 'volume', self.fade_controller)
         self.master_fade.add_control_binding(binding)
@@ -140,22 +199,21 @@ class Player(PyampBase):
     def stop(self):
         self.state = Gst.State.NULL
 
-    def fade(self, level, duration):
-        position = self.get_position() + (duration * Gst.SECOND)
-        self.fade_controller.set(position, level)
+    def fade(self, duration, level):
+        self.fade_controller.set_sweep(
+            self.get_position(), duration * Gst.SECOND, level)
 
     @bindable
     def fade_out(self, duration=0.5):
-        self.fade(0, duration)
+        self.fade(duration, 0)
 
     @bindable
     def fade_in(self, duration=0.5):
-        self.fade(1, duration)
+        self.fade(duration, 1)
 
     def change_volume(self, delta):
-        position = self.get_position() + (0.33 * Gst.SECOND)
-        self.target_volume = clamp(self.target_volume + delta, 0, 1)
-        self.volume_controller.set('volume', position, self.target_volume)
+        self.volume_controller.set_sweep_delta(
+            self.get_position(), 0.33 * Gst.SECOND, delta)
 
     @bindable
     def volume_down(self):
@@ -174,6 +232,8 @@ class Player(PyampBase):
         seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
         self.pipeline.seek_simple(
             Gst.Format.TIME, Gst.SeekFlags.FLUSH, seek_to_pos)
+        self.volume_controller.reset()
+        self.fade_controller.reset()
 
     @bindable
     def seek_forward(self, step=None):
