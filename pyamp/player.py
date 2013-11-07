@@ -18,7 +18,7 @@ class SweepingInterpolationControlSource(
     events such as track seeks, so that we don't replay their control events,
     but instead keep to their target value.
     '''
-    def __init__(self, target_value, scaling_factor=1, min_=0, max_=1, *args,
+    def __init__(self, target_value=1, scaling_factor=1, min_=0, max_=1, *args,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.scaling_factor = scaling_factor
@@ -42,12 +42,12 @@ class SweepingInterpolationControlSource(
             self.set_target(future_value)
 
     def set_sweep_delta(self, current_time, delta_time, delta_value):
-        future_value = clamp(
-            self._target_value + delta_value, self.min, self.max)
+        future_value = self._target_value + delta_value
         self.set_sweep(current_time, delta_time, future_value)
 
     def _set(self, time, value):
-        result = super().set(time, value * self.scaling_factor)
+        value = clamp(value, self.min, self.max) * self.scaling_factor
+        result = self.set(time, value)
         if result:
             self._additional_control_point_times.append(time)
             self._last_set_time = time
@@ -107,7 +107,7 @@ class Player(PyampBase):
         self.volume.add_control_binding(binding)
 
         self.fade_controller = SweepingInterpolationControlSource(
-            target_value=1, scaling_factor=self.volume_scaling_factor)
+            scaling_factor=self.volume_scaling_factor)
         self.fade_controller.set_property(
             'mode', GstController.InterpolationMode.CUBIC)
         binding = GstController.DirectControlBinding.new(
