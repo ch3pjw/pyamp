@@ -5,7 +5,7 @@ from abc import abstractproperty
 from gi.repository import Gst
 
 from .base import PyampBase
-from .util import threaded_future
+from .util import threaded_future, parse_gst_tag_list
 
 
 class SqlRepresentableType(PyampBase):

@@ -5,7 +5,7 @@ from gi.repository import Gst, GstController
 
 from .base import PyampBase
 from .keyboard import bindable
-from .util import clamp, moving_window
+from .util import clamp, moving_window, parse_gst_tag_list
 
 
 class SweepingInterpolationControlSource(
@@ -125,16 +125,9 @@ class Player(PyampBase):
                     self.stop()
                     raise StopIteration('Track finished successfully!')
                 if message.type == Gst.MessageType.TAG:
-                    self.tags.update(self._parse_tags(message.parse_tag()))
+                    self.tags.update(parse_gst_tag_list(message.parse_tag()))
             else:
                 break
-
-    def _parse_tags(self, gst_tag_list):
-        parsed_tags = {}
-        def parse_tag(gst_tag_list, tag_name, parsed_tags):
-            parsed_tags[tag_name] = gst_tag_list.get_value_index(tag_name, 0)
-        gst_tag_list.foreach(parse_tag, parsed_tags)
-        return parsed_tags
 
     def get_duration(self):
         '''

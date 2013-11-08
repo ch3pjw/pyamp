@@ -34,6 +34,18 @@ def moving_window(iterable, window_size=2):
         yield result
 
 
+def parse_gst_tag_list(gst_tag_list):
+    '''Takes a GstTagList object and returns a dict containting tag_name-value
+    pairs.
+    '''
+    parsed_tags = {}
+    def parse_tag(gst_tag_list, tag_name, parsed_tags):
+        safe_tag_name = tag_name.replace('-', '_')
+        parsed_tags[safe_tag_name] = gst_tag_list.get_value_index(tag_name, 0)
+    gst_tag_list.foreach(parse_tag, parsed_tags)
+    return parsed_tags
+
+
 class LoopingCall:
     def __init__(self, func, *args, loop=None, **kwargs):
         self.func = func
