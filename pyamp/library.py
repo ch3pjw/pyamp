@@ -2,7 +2,7 @@ import os
 import sqlite3
 from functools import wraps
 from abc import abstractproperty
-from gi.repository import Gst
+from gi.repository import Gst, GstPbutils
 
 from .base import PyampBase
 from .util import threaded_future, parse_gst_tag_list
@@ -30,11 +30,12 @@ class SqlRepresentableType(PyampBase):
         for col_name in self._col_types:
             self.__dict__[col_name] = None
         try:
-            dict_like = args[0]
-            # dict-like might be a gst.TagList object, which only has .keys()
-            for attr_name in dict_like.keys():
-                safe_attr_name = attr_name.replace('-', '_')
-                setattr(self, safe_attr_name, dict_like[attr_name])
+            if isinstance(args[0], Gst.TagList):
+                dict_like = parse_gst_tag_list(args[0])
+            else:
+                dict_like = args[0]
+            for name, value in dict_like.items():
+                setattr(self, name, value)
         except (IndexError, AttributeError):
             for col_name, col_data in zip(self._get_col_names(), args):
                 setattr(self, col_name, col_data)
@@ -126,7 +127,7 @@ class SqlRepresentableType(PyampBase):
         cursor.execute(
             'SELECT * FROM {} WHERE {}'.format(
                 cls.__name__, query_placeholder),
-            search_dict.values())
+            list(search_dict.values()))
         return [cls(*row) for row in cursor.fetchall()]
 
     @classmethod
@@ -186,7 +187,7 @@ class TrackMetadata(SqlRepresentableType):
         'audio_codec': str,
         'bitrate': int,
         'container_format': str,
-        'date': str,
+        'datetime': str,
         'encoder': str,
         'encoder_version': str,
         'file_path': str,
@@ -234,8 +235,7 @@ class Library(PyampBase):
     def __init__(self, database_file):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
-        #from gst import pbutils
-        #self.discoverer = pbutils.Discoverer(Gst.SECOND)
+        self.discoverer = GstPbutils.Discoverer()
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []
