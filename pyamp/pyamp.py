@@ -155,12 +155,15 @@ def main():
         interface.player.play()
     else:
         # Oh no! There's no file, let's do a search!
-        d = library.discover_on_path(user_config.library.index_paths)
-        d.addCallback(lambda _: library.search_tracks(sys.argv[1]))
-        @d.addCallback
-        def search_track(result):
-            interface.player.set_file(result[0].file_path)
-            interface.player.play()
+        @asyncio.coroutine
+        def search_track():
+            result = yield from library.discover_on_path(
+                user_config.library.index_paths)
+            result = yield from library.search_tracks(sys.argv[1])
+            if result:
+                interface.player.set_file(result[0].file_path)
+                interface.player.play()
+        task = asyncio.Task(search_track())
     interface.run()
 
 if __name__ == '__main__':
