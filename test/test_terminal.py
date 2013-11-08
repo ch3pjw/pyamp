@@ -1,6 +1,6 @@
 from unittest import TestCase
 from mock import patch
-from StringIO import StringIO
+from io import StringIO
 
 import blessings
 import signal
@@ -11,8 +11,8 @@ from pyamp.terminal import Terminal
 
 class TestTerminal(TestCase):
     def test_overridden_sugar(self):
-        pyamp_terminal = Terminal()
-        blessings_terminal = blessings.Terminal()
+        pyamp_terminal = Terminal(force_styling=True)
+        blessings_terminal = blessings.Terminal(force_styling=True)
         for attr_name in (
                 'enter_fullscreen', 'exit_fullscreen', 'hide_cursor',
                 'normal_cursor'):
@@ -64,7 +64,8 @@ class TestTerminal(TestCase):
     @patch('pyamp.terminal.tty.setcbreak', autospec=True)
     def test_unbuffered_input(self, mock_setcbreak, mock_termios):
         mock_termios.tcgetattr.return_value = 'Wobble'
-        term = Terminal()
+        term = Terminal(force_styling=True)
+        term.is_a_tty = True
         mock_termios.reset_mock()
         context_manager = term.unbuffered_input()
         context_manager.__enter__()

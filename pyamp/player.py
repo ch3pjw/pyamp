@@ -1,83 +1,131 @@
 import os
-from functools import wraps
+import logging
 
-import pygst
-pygst.require('0.10')
-# The gst module needs to be imported after we've set up some environment:
-from util import ModuleProxy
-gst = ModuleProxy()
+from gi.repository import Gst, GstController
 
-from base import PyampBase
-from keyboard import bindable
-from util import clamp
+from .base import PyampBase
+from .keyboard import bindable
+from .util import clamp, moving_window, parse_gst_tag_list
 
 
-def gst_log_calls(func):
-    '''Decorator to make `func` log it's calls and arguments to the gstreamer
-    log file.
+class SweepingInterpolationControlSource(
+        GstController.InterpolationControlSource):
+    '''This class extends the normal InterpolationControlSource to include the
+    concept of a target value, and is intended to smooth transitions to desired
+    user values. We maintain an in initial control point at t=0 with the users
+    desired value, add control points as required to execute their transition
+    on demand, and add a facility to remove those extra control points on
+    events such as track seeks, so that we don't replay their control events,
+    but instead keep to their target value.
     '''
-    @wraps(func)
-    def logging_func(*args, **kwargs):
-        gst.info(' {} '.format(func.__name__).center(35, '-'))
-        gst.info('called with args: {}, kwargs: {}'.format(args, kwargs))
-        result = func(*args, **kwargs)
-        gst.info('{} result: {}'.format(func.__name__, result))
-        gst.info('-' * 35)
+    def __init__(self, target_value=1, scaling_factor=1, min_=0, max_=1, *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scaling_factor = scaling_factor
+        self.min = min_
+        self.max = max_
+        self._target_value = None
+        self._additional_control_point_times = []
+        self._last_set_time = 0
+        self.set_target(target_value)
+        self.log = logging.getLogger(self.__class__.__name__)
+
+    def set_target(self, target_value):
+        self._target_value = target_value
+        self.set(0, self._target_value * self.scaling_factor)
+
+    def set_sweep(self, current_time, delta_time, future_value):
+        if future_value != self._target_value:
+            if current_time > self._last_set_time:
+                self._set(current_time, self._target_value)
+            self._set(current_time + delta_time, future_value)
+            self.set_target(future_value)
+
+    def set_sweep_delta(self, current_time, delta_time, delta_value):
+        future_value = self._target_value + delta_value
+        self.set_sweep(current_time, delta_time, future_value)
+
+    def _set(self, time, value):
+        value = clamp(value, self.min, self.max) * self.scaling_factor
+        result = self.set(time, value)
+        if result:
+            self._additional_control_point_times.append(time)
+            self._last_set_time = time
         return result
-    return logging_func
+
+    def reset(self):
+        '''Removes all but the initial control point with the target value.
+        This should be called when one performs an operation such as a seek
+        that would otherwise replay a user's control inputs.
+        '''
+        for time in self._additional_control_point_times:
+            self.unset(time)
+        self._additional_control_point_times[:] = []
 
 
 class Player(PyampBase):
+    # Gstreamer volume goes from 0 - 1000%, so we need to scale our controller
+    # output values:
+    volume_scaling_factor = 0.1
+
     def __init__(self, initial_volume=1):
-        super(Player, self).__init__()
-        # Because someone else may be responsible for setting up the
-        # environment before gst import, we do the import here, which is as
-        # late as possible, and pretend to the rest of the world like gst was
-        # here all along :-s
-        import gst as gstreamer
-        gst.module = gstreamer
-        self.target_volume = initial_volume
-        self._setup_gstreamer_pipeline()
+        super().__init__()
+        self._setup_gstreamer_pipeline(initial_volume)
         self.tags = {'title': ''}
 
-    @gst_log_calls
-    def _setup_gstreamer_pipeline(self):
-        self.pipeline = gst.element_factory_make('playbin2', 'pyamp_playbin')
+    def _setup_gstreamer_pipeline(self, initial_volume):
+        Gst.init(None)
+        self.pipeline = Gst.ElementFactory.make('playbin', 'pyamp_playbin')
 
-        self.volume = gst.element_factory_make('volume', 'pyamp_volume')
-        self.master_fade = gst.element_factory_make(
+        self.volume = Gst.ElementFactory.make('volume', 'pyamp_volume')
+        self.master_fade = Gst.ElementFactory.make(
             'volume', 'pyamp_master_fade')
-        self.audiosink = gst.element_factory_make(
+        self.audiosink = Gst.ElementFactory.make(
             'autoaudiosink', 'pyamp_audiosink')
 
-        self.sink_bin = gst.Bin('audio_sink_bin')
-        self.sink_bin.add_many(self.volume, self.master_fade, self.audiosink)
-        gst.element_link_many(self.volume, self.master_fade, self.audiosink)
+        self.sink_bin = Gst.Bin()
+        self.sink_bin.set_name('pyamp_audio_sink_bin')
+        for element in (self.volume, self.master_fade, self.audiosink):
+            self.sink_bin.add(element)
+        for source, destination in moving_window(
+                (self.volume, self.master_fade, self.audiosink)):
+            source.link(destination)
         pad = self.volume.get_static_pad('sink')
-        ghost_pad = gst.GhostPad('sink', pad)
+        ghost_pad = Gst.GhostPad.new('sink', pad)
         ghost_pad.set_active(True)
         self.sink_bin.add_pad(ghost_pad)
 
         self.pipeline.set_property('audio-sink', self.sink_bin)
 
-        self.volume_controller = gst.Controller(self.volume, 'volume')
-        self.volume_controller.set_interpolation_mode(
-            'volume', gst.INTERPOLATE_LINEAR)
-        self.volume.set_property('volume', self.target_volume)
-        self.fade_controller = gst.Controller(self.master_fade, 'volume')
-        self.fade_controller.set_interpolation_mode(
-            'volume', gst.INTERPOLATE_LINEAR)
+        self.volume_controller = SweepingInterpolationControlSource(
+            target_value=initial_volume,
+            scaling_factor=self.volume_scaling_factor)
+        self.volume_controller.set_property(
+            'mode', GstController.InterpolationMode.LINEAR)
+        binding = GstController.DirectControlBinding.new(
+            self.volume, 'volume', self.volume_controller)
+        self.volume.add_control_binding(binding)
+
+        self.fade_controller = SweepingInterpolationControlSource(
+            scaling_factor=self.volume_scaling_factor)
+        self.fade_controller.set_property(
+            'mode', GstController.InterpolationMode.CUBIC)
+        binding = GstController.DirectControlBinding.new(
+            self.master_fade, 'volume', self.fade_controller)
+        self.master_fade.add_control_binding(binding)
 
     def _handle_messages(self):
         bus = self.pipeline.get_bus()
         while True:
-            message = bus.poll(gst.MESSAGE_ANY, timeout=0.01)
+            message = bus.poll(
+                Gst.MessageType.EOS | Gst.MessageType.TAG,
+                timeout=0.01)
             if message:
-                if message.type == gst.MESSAGE_EOS:
+                if message.type == Gst.MessageType.EOS:
                     self.stop()
                     raise StopIteration('Track finished successfully!')
-                if message.type == gst.MESSAGE_TAG:
-                    self.tags.update(message.parse_tag())
+                if message.type == Gst.MessageType.TAG:
+                    self.tags.update(parse_gst_tag_list(message.parse_tag()))
             else:
                 break
 
@@ -86,28 +134,20 @@ class Player(PyampBase):
         :returns: The total duration of the currently playing track, in
         nanoseconds, or None if the duration could not be retrieved.
         '''
-        try:
-            duration, format_ = self.pipeline.query_duration(
-                gst.FORMAT_TIME, None)
-            return duration
-        except gst.QueryError:
-            pass
+        success, duration = self.pipeline.query_duration(Gst.Format.TIME)
+        return duration
 
     def get_position(self):
         '''
         :returns: The playback position of the currently playing track, in
         nanoseconds, or None if the position could not be retrieved.
         '''
-        try:
-            position, format_ = self.pipeline.query_position(
-                gst.FORMAT_TIME, None)
-            return position
-        except gst.QueryError:
-            pass
+        success, position = self.pipeline.query_position(Gst.Format.TIME)
+        return position
 
     @property
     def playing(self):
-        return self.state == gst.STATE_PLAYING
+        return self.state == Gst.State.PLAYING
 
     @property
     def state(self):
@@ -115,7 +155,8 @@ class Player(PyampBase):
         to be doing index lookups or tuple unpacking on the result of the one
         provided by gst-python.
         '''
-        success, state, pending = self.pipeline.get_state()
+        timeout = 0
+        success, state, pending = self.pipeline.get_state(timeout)
         return state
 
     @state.setter
@@ -127,23 +168,20 @@ class Player(PyampBase):
     def update(self):
         self._handle_messages()
 
-    @gst_log_calls
     def set_file(self, filepath):
         filepath = os.path.abspath(filepath)
         self.pipeline.set_property('uri', 'file://{}'.format(filepath))
 
     @bindable
-    @gst_log_calls
     def play(self):
-        self.state = gst.STATE_PLAYING
+        self.log.info('Playing...')
+        self.state = Gst.State.PLAYING
 
     @bindable
-    @gst_log_calls
     def pause(self):
-        self.state = gst.STATE_PAUSED
+        self.state = Gst.State.PAUSED
 
     @bindable
-    @gst_log_calls
     def play_pause(self):
         if self.playing:
             self.pause()
@@ -151,28 +189,24 @@ class Player(PyampBase):
             self.play()
 
     @bindable
-    @gst_log_calls
     def stop(self):
-        self.state = gst.STATE_NULL
+        self.state = Gst.State.NULL
 
-    @gst_log_calls
-    def fade(self, level, duration):
-        position = self.get_position() + (duration * gst.SECOND)
-        self.fade_controller.set('volume', position, level)
+    def fade(self, duration, level):
+        self.fade_controller.set_sweep(
+            self.get_position(), duration * Gst.SECOND, level)
 
     @bindable
     def fade_out(self, duration=0.5):
-        self.fade(0, duration)
+        self.fade(duration, 0)
 
     @bindable
     def fade_in(self, duration=0.5):
-        self.fade(1, duration)
+        self.fade(duration, 1)
 
-    @gst_log_calls
     def change_volume(self, delta):
-        position = self.get_position() + (0.33 * gst.SECOND)
-        self.target_volume = clamp(self.target_volume + delta, 0, 1)
-        self.volume_controller.set('volume', position, self.target_volume)
+        self.volume_controller.set_sweep_delta(
+            self.get_position(), 0.33 * Gst.SECOND, delta)
 
     @bindable
     def volume_down(self):
@@ -182,7 +216,6 @@ class Player(PyampBase):
     def volume_up(self):
         self.change_volume(delta=0.1)
 
-    @gst_log_calls
     def seek(self, step):
         '''
         :parameter step: the time, in nanoseconds, to move in the currently
@@ -191,7 +224,9 @@ class Player(PyampBase):
         seek_to_pos = self.get_position() + step
         seek_to_pos = clamp(seek_to_pos, 0, self.get_duration())
         self.pipeline.seek_simple(
-            gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, seek_to_pos)
+            Gst.Format.TIME, Gst.SeekFlags.FLUSH, seek_to_pos)
+        self.volume_controller.reset()
+        self.fade_controller.reset()
 
     @bindable
     def seek_forward(self, step=None):
@@ -199,7 +234,7 @@ class Player(PyampBase):
         :parameter step: the time, in nanoseconds, to move forward in the
             currently playing track.
         '''
-        step = step or gst.SECOND
+        step = step or Gst.SECOND
         self.seek(step)
 
     @bindable
@@ -208,5 +243,5 @@ class Player(PyampBase):
         :parameter step: the time, in nanoseconds, to move backward in the
             currently playing track.
         '''
-        step = step or gst.SECOND
+        step = step or Gst.SECOND
         self.seek(-step)

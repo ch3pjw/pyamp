@@ -15,14 +15,14 @@ class UserConfig(object):
         try:
             data = self._data[name]
         except KeyError as e:
-            raise AttributeError(e.message)
+            raise AttributeError(e)
         if isinstance(data, collections.Mapping):
             return self.__class__(data)
         else:
             return data
 
     def __dir__(self):
-        return sorted(set(dir(self.__class__) + self._data.keys()))
+        return sorted(set(dir(self.__class__) + list(self._data.keys())))
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
@@ -43,7 +43,7 @@ class UserConfig(object):
         self._update(self._data, new._data)
 
     def _update(self, existing, new):
-        for key, value in new.iteritems():
+        for key, value in new.items():
             if isinstance(value, collections.Mapping):
                 existing[key] = self._update(existing.get(key, {}), value)
             elif value is None:

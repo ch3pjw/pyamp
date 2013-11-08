@@ -1,27 +1,34 @@
 #! /usr/bin/env python
-from __future__ import division
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 import sys
 import os
 import signal
 import logging
+import asyncio
+import fcntl
+asyncio.log.logger.setLevel('INFO')
 
-from twisted.internet import reactor, task, protocol, stdio
-
-from base import PyampBase
-from player import Player, gst, gst_log_calls
-from library import Library
-from config import load_config
-from keyboard import Keyboard, bindable, is_bindable
-from terminal import Terminal
-from ui import HorizontalContainer, ProgressBar, TimeCheck
+from .base import PyampBase
+from .player import Player
+from .library import Library
+from .config import load_config
+from .keyboard import Keyboard, bindable, is_bindable
+from .terminal import Terminal
+from .ui import HorizontalContainer, ProgressBar, TimeCheck
+from .util import LoopingCall
 
 
 class UI(PyampBase):
-    def __init__(self, user_config, reactor=reactor):
+    def __init__(self, user_config, stdin=None, event_loop=None):
         super(UI, self).__init__()
         self.user_config = user_config
-        self.reactor = reactor
+        self.infile = stdin or sys.stdin
+        self.loop = event_loop or asyncio.get_event_loop()
+        self.keyboard = Keyboard()
+
         self.player = Player(initial_volume=user_config.persistent.volume)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
@@ -44,7 +51,7 @@ class UI(PyampBase):
         bindable_funcs = self._create_bindable_funcs_map()
         key_bindings = {}
         for func_name, keys in self.user_config.key_bindings:
-            if isinstance(keys, basestring):
+            if isinstance(keys, str):
                 keys = [keys]
             for key in keys:
                 key = ' '.join(key.split())
@@ -64,40 +71,52 @@ class UI(PyampBase):
         self.draw()
 
     def draw(self):
-        #print self.terminal.clear()
+        #print(self.terminal.clear())
         if self.player.playing:
-            position = (self.player.get_position() or 0) / gst.SECOND
-            duration = (self.player.get_duration() or 0) / gst.SECOND
+            position = (self.player.get_position() or 0) / Gst.SECOND
+            duration = (self.player.get_duration() or 0) / Gst.SECOND
             if duration:
                 self.progress_bar.fraction = position / duration
             self.time_check.position = position
             self.time_check.duration = duration
         total_width = self.terminal.width - 2
         with self.terminal.location(0, self.terminal.height - 2):
-            print self.player.tags['title'].center(self.terminal.width)
-            print self.status_bar.draw(total_width, 1).center(
-                self.terminal.width),
+            print(self.player.tags['title'].center(self.terminal.width))
+            print(self.status_bar.draw(total_width, 1).center(
+                self.terminal.width), end='')
         sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
         self.quit()
 
-    def handle_input(self, char):
-        action = self.key_bindings.get(char, lambda: None)
+    def handle_input(self, data):
+        keystroke = self.keyboard[data]
+        action = self.key_bindings.get(keystroke, lambda: None)
         action()
 
     @bindable
-    @gst_log_calls
     def quit(self):
         def clean_up():
             self.player.stop()
-            self.reactor.stop()
+            self.loop.stop()
         if self.player.playing:
             fade_out_time = 1
             self.player.fade_out(fade_out_time)
-            reactor.callLater(fade_out_time + 0.1, clean_up)
+            self.loop.call_later(fade_out_time + 0.1, clean_up)
         else:
             clean_up()
+
+    def _setup_terminal_input(self):
+        if hasattr(self.infile, 'fileno'):
+            # Use fcntl to set stdin to non-blocking. WARNING - this is not
+            # particularly portable!
+            flags = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
+            flags = flags | os.O_NONBLOCK
+            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, flags)
+        def read_stdin():
+            data = self.infile.read()
+            self.handle_input(data)
+        self.loop.add_reader(sys.stdin, read_stdin)
 
     def run(self):
         with self.terminal.fullscreen():
@@ -105,20 +124,10 @@ class UI(PyampBase):
                 with self.terminal.unbuffered_input():
                     signal.signal(signal.SIGINT, self._handle_sigint)
                     signal.signal(signal.SIGTSTP, self.terminal.handle_sigtstp)
-                    self.looping_call = task.LoopingCall(self.update)
+                    self._setup_terminal_input()
+                    self.looping_call = LoopingCall(self.update)
                     self.looping_call.start(1 / 20)
-                    stdio.StandardIO(InputReader(self))
-                    self.reactor.run()
-
-
-class InputReader(protocol.Protocol):
-    def __init__(self, ui):
-        self.ui = ui
-        self.keyboard = Keyboard()
-
-    def dataReceived(self, data):
-        key_name = self.keyboard[data]
-        self.ui.handle_input(key_name)
+                    self.loop.run_forever()
 
 
 def set_up_environment(user_config):
@@ -131,7 +140,7 @@ def set_up_environment(user_config):
         filename=user_config.system.log_file,
         filemode='w',
         level=getattr(logging, user_config.system.log_level.upper()),
-        format='[%(asctime)s %(levelname)s] %(message)s',
+        format='[%(asctime)s %(name)s %(levelname)s] %(message)s',
         datefmt='%H:%M:%S')
     os.stat_float_times(True)
 
@@ -146,12 +155,15 @@ def main():
         interface.player.play()
     else:
         # Oh no! There's no file, let's do a search!
-        d = library.discover_on_path(user_config.library.index_paths)
-        d.addCallback(lambda _: library.search_tracks(sys.argv[1]))
-        @d.addCallback
-        def search_track(result):
-            interface.player.set_file(result[0].file_path)
-            interface.player.play()
+        @asyncio.coroutine
+        def search_track():
+            result = yield from library.discover_on_path(
+                user_config.library.index_paths)
+            result = yield from library.search_tracks(sys.argv[1])
+            if result:
+                interface.player.set_file(result[0].file_path)
+                interface.player.play()
+        task = asyncio.Task(search_track())
     interface.run()
 
 if __name__ == '__main__':

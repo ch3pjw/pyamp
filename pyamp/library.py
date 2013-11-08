@@ -1,11 +1,11 @@
 import os
 import sqlite3
 from functools import wraps
-from twisted.internet import threads
 from abc import abstractproperty
+from gi.repository import Gst, GstPbutils
 
-from base import PyampBase
-from player import gst
+from .base import PyampBase
+from .util import threaded_future, parse_gst_tag_list
 
 
 class SqlRepresentableType(PyampBase):
@@ -23,19 +23,19 @@ class SqlRepresentableType(PyampBase):
 
     _python_to_sql_type = {
         str: 'TEXT',
-        int: 'INTEGER',
-        long: 'LONG',
+        int: 'LONG',
         float: 'SINGLE'}
 
     def __init__(self, *args):
         for col_name in self._col_types:
             self.__dict__[col_name] = None
         try:
-            dict_like = args[0]
-            # dict-like might be a gst.TagList object, which only has .keys()
-            for attr_name in dict_like.keys():
-                safe_attr_name = attr_name.replace('-', '_')
-                setattr(self, safe_attr_name, dict_like[attr_name])
+            if isinstance(args[0], Gst.TagList):
+                dict_like = parse_gst_tag_list(args[0])
+            else:
+                dict_like = args[0]
+            for name, value in dict_like.items():
+                setattr(self, name, value)
         except (IndexError, AttributeError):
             for col_name, col_data in zip(self._get_col_names(), args):
                 setattr(self, col_name, col_data)
@@ -127,7 +127,7 @@ class SqlRepresentableType(PyampBase):
         cursor.execute(
             'SELECT * FROM {} WHERE {}'.format(
                 cls.__name__, query_placeholder),
-            search_dict.values())
+            list(search_dict.values()))
         return [cls(*row) for row in cursor.fetchall()]
 
     @classmethod
@@ -185,9 +185,9 @@ class TrackMetadata(SqlRepresentableType):
         'album': str,
         'artist': str,
         'audio_codec': str,
-        'bitrate': long,
+        'bitrate': int,
         'container_format': str,
-        'date': str,
+        'datetime': str,
         'encoder': str,
         'encoder_version': str,
         'file_path': str,
@@ -208,12 +208,13 @@ class Dir(SqlRepresentableType):
 
 
 def blocking(func):
-    '''Decorator to defer a blocking method to a thread.
+    '''Decorator to execute a blocking method in a thread and wrap the
+    management in a future.
     '''
     @wraps(func)
-    def deferred_to_thread(*args, **kwargs):
-        return threads.deferToThread(func, *args, **kwargs)
-    return deferred_to_thread
+    def non_blocking_call(*args, **kwargs):
+        return threaded_future(func, *args, **kwargs)
+    return non_blocking_call
 
 
 def with_database_cursor(func):
@@ -234,8 +235,7 @@ class Library(PyampBase):
     def __init__(self, database_file):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
-        from gst import pbutils
-        self.discoverer = pbutils.Discoverer(gst.SECOND)
+        self.discoverer = GstPbutils.Discoverer()
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []

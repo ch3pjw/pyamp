@@ -7,3 +7,6 @@
 .coverage
 htmlcov
 test/total_coverage
+_trial_temp
+pyamp.log
+gstreamer.log

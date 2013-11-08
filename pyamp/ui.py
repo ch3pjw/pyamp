@@ -3,7 +3,7 @@ from __future__ import division
 from abc import ABCMeta, abstractmethod, abstractproperty
 from itertools import cycle
 
-from util import clamp
+from .util import clamp
 
 
 def weighted_round_robin(iterable):

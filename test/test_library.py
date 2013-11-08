@@ -8,14 +8,14 @@ class TestSqlRepresentableType(TestCase):
     def setUp(self):
         class TestSqlType(SqlRepresentableType):
             _col_types = {
-                'stringy': str, 'floaty': float, 'looong': long, 'inty': int}
+                'stringy': str, 'floaty': float, 'looong': int, 'inty': int}
             _col_attrs = {'stringy': 'UNIQUE'}
         self.cls = TestSqlType
         self.schema_string = (
-            'floaty SINGLE, inty INTEGER, looong LONG, stringy TEXT UNIQUE')
+            'floaty SINGLE, inty LONG, looong LONG, stringy TEXT UNIQUE')
         self.schema_data = [
             (0, 'floaty', 'SINGLE', 0, None, 0),
-            (1, 'inty', 'INTEGER', 0, None, 0),
+            (1, 'inty', 'LONG', 0, None, 0),
             (2, 'looong', 'LONG', 0, None, 0),
             (3, 'stringy', 'TEXT', 0, None, 0)]
 
@@ -24,18 +24,18 @@ class TestSqlRepresentableType(TestCase):
         plain = self.cls()
         for name in attr_names:
             self.assertIsNone(getattr(plain, name))
-        argy = self.cls(1.0, 2L, 3, '4')
+        argy = self.cls(1.0, 2, 3, '4')
         self.assertEqual(argy.floaty, 1.0)
         self.assertEqual(argy.inty, 2)
-        self.assertEqual(argy.looong, 3L)
+        self.assertEqual(argy.looong, 3)
         self.assertEqual(argy.stringy, '4')
         missing_argy = self.cls(1.0)
         self.assertEqual(missing_argy.floaty, 1.0)
         for name in ('inty', 'looong', 'stringy'):
             self.assertIsNone(getattr(missing_argy, name))
-        data = {'looong': 40L, 'floaty': 30.0, 'inty': 20, 'stringy': '10'}
+        data = {'looong': 40, 'floaty': 30.0, 'inty': 20, 'stringy': '10'}
         dicty = self.cls(data)
-        for k, v in data.iteritems():
+        for k, v in data.items():
             self.assertEqual(getattr(dicty, k), v)
 
     def test_get_col_names(self):
@@ -50,7 +50,7 @@ class TestSqlRepresentableType(TestCase):
 
     def test_getitem(self):
         def check():
-            for i, expected_type in enumerate((float, int, long, str)):
+            for i, expected_type in enumerate((float, int, int, str)):
                 self.assertEqual(instance[i], expected_type(i))
         instance = self.cls(0, 1, 2, 3)
         check()
@@ -58,12 +58,12 @@ class TestSqlRepresentableType(TestCase):
         instance.inty = 1
         instance.floaty = 0.0
         instance.stringy = '3'
-        instance.looong = 2L
+        instance.looong = 2
         check()
 
     def test_setattr(self):
         for instance in (self.cls(), self.cls(9, 9, 9, 9)):
-            for name, type_ in self.cls._col_types.iteritems():
+            for name, type_ in self.cls._col_types.items():
                 setattr(instance, name, 1)
                 self.assertIsInstance(getattr(instance, name), type_)
                 self.assertEqual(getattr(instance, name), type_(1))
@@ -102,7 +102,7 @@ class TestSqlRepresentableType(TestCase):
         self.assertEqual(mock_create_table.call_count, 0)
         self.assertEqual(mock_drop_table.call_count, 0)
 
-        self.schema_data[2] = (2, 'interloper', 'LONG', 0, None, 0)
+        self.schema_data[2] = (2, 'interloper', 'INT', 0, None, 0)
         self.cls.create_table_if_required(mock_cursor)
         self.assertEqual(mock_create_table.call_count, 1)
         self.assertEqual(mock_drop_table.call_count, 1)

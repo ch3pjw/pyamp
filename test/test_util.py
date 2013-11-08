@@ -1,6 +1,9 @@
 from unittest import TestCase
 
-from pyamp.util import clamp
+import asyncio
+import threading
+
+from pyamp.util import clamp, moving_window, LoopingCall, threaded_future
 
 
 class TestUtil(TestCase):
@@ -18,3 +21,46 @@ class TestUtil(TestCase):
         self.assertEqual(clamp(-121, min_=13), 13)
         self.assertEqual(clamp(121, max_=13), 13)
         self.assertEqual(clamp(-121, max_=13), -121)
+
+    def test_moving_window(self):
+        expected = [(1, 2), (2, 3), (3, 4), (4, 5)]
+        for actual, expected in zip(moving_window([1, 2, 3, 4, 5]), expected):
+            self.assertEqual(actual, expected)
+
+    def test_looping_call(self):
+        result = []
+        future = asyncio.Future()
+        def loopable(n):
+            for i in range(n):
+                yield result.append(i)
+            looping_call.stop()
+            future.set_result('done')
+            yield result.append(n)
+        func = loopable(3).__next__
+        looping_call = LoopingCall(func)
+        looping_call.start(0.1)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(future)
+        self.assertEqual(result, [0, 1, 2, 3])
+
+    def test_threaded_future(self):
+        result = ['']
+        def blocky(*args, **kwargs):
+            result[0] = 'Success', threading.current_thread(), args, kwargs
+            return 'Paul rocks'
+        future = threaded_future(blocky, 'hello', kwarg='world')
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(future)
+        success, thread, args, kwargs = result[0]
+        self.assertEqual(success, 'Success')
+        self.assertIsNot(thread, threading.current_thread())
+        self.assertEqual(args, ('hello',))
+        self.assertEqual(kwargs, {'kwarg': 'world'})
+        self.assertEqual(future.result(), 'Paul rocks')
+
+    def test_threaded_future_with_exception(self):
+        def faily():
+            raise KeyError('This exception is part of the test')
+        future = threaded_future(faily)
+        loop = asyncio.get_event_loop()
+        self.assertRaises(KeyError, loop.run_until_complete, future)
