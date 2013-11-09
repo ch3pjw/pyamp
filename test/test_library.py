@@ -137,6 +137,64 @@ class TestSqlRepresentableType(TestCase):
             ') VALUES (?, ?, ?, ?)',
             instance)
 
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_list(self, mock_cursor):
+        mock_cursor.fetchall.return_value = [
+            (1.0, 2, 3, '4'), (5.0, 6, 7, '8')]
+        result = self.cls.list(mock_cursor)
+        self.assertEqual(len(result), 2)
+        for item in result:
+            self.assertIsInstance(item, self.cls)
+        self.assertEqual(result[0].floaty, 1.0)
+        self.assertEqual(result[0].inty, 2)
+        self.assertEqual(result[1].stringy, '8')
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT * FROM TestSqlType')
+        mock_cursor.execute.reset_mock()
+        self.cls.list(mock_cursor, random_order=True)
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT * FROM TestSqlType ORDER BY RANDOM()')
+        mock_cursor.execute.reset_mock()
+        self.cls.list(mock_cursor, max_=3)
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT * FROM TestSqlType LIMIT 3')
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_get_random_entry(self, mock_cursor):
+        data = (1.0, 2, 3, '4')
+        mock_cursor.fetchall.return_value = [data]
+        result = self.cls.get_random_entry(mock_cursor)
+        self.assertEqual(result, self.cls(*data))
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT * FROM TestSqlType ORDER BY RANDOM() LIMIT 1')
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_list_unique_column_entries(self, mock_cursor):
+        mock_cursor.fetchall.return_value = [(1,), (2,), (3,)]
+        result = self.cls.list_unique_column_entries(mock_cursor, 'inty')
+        self.assertEqual(result, [1, 2, 3])
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT DISTINCT inty FROM TestSqlType')
+        mock_cursor.execute.reset_mock()
+        self.cls.list_unique_column_entries(
+            mock_cursor, 'inty', random_order=True)
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT DISTINCT inty FROM TestSqlType ORDER BY RANDOM()')
+        mock_cursor.execute.reset_mock()
+        self.cls.list_unique_column_entries(
+            mock_cursor, 'inty', max_=2)
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT DISTINCT inty FROM TestSqlType LIMIT 2')
+
+    @patch('pyamp.library.sqlite3.Cursor', autospec=True)
+    def test_get_random_unique_column_entry(self, mock_cursor):
+        mock_cursor.fetchall.return_value = [(42,)]
+        result = self.cls.get_random_unique_column_entry(mock_cursor, 'looong')
+        self.assertEqual(result, 42)
+        mock_cursor.execute.assert_called_once_with(
+            'SELECT DISTINCT looong FROM TestSqlType ORDER BY RANDOM() LIMIT '
+            '1')
+
 
 class TestTrackMetadata(TestCase):
     def test_get_and_setattr(self):
