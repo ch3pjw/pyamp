@@ -35,7 +35,8 @@ class UI(PyampBase):
         play_mode = PlayMode.__members__.get(
             user_config.persistent.play_mode, PlayMode.album_shuffle)
         self.queue = Queue(self.library, play_mode=play_mode)
-        self.player.track_end_callback = self.next_track
+        self.player.track_end_callback = (
+            lambda: self.next_track(quit_on_finished=True))
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
@@ -70,10 +71,7 @@ class UI(PyampBase):
         return key_bindings
 
     def update(self):
-        try:
-            self.player.update()
-        except StopPlaying:
-            self.quit()
+        self.player.update()
         self.draw()
 
     def draw(self):
@@ -113,10 +111,16 @@ class UI(PyampBase):
             clean_up()
 
     @bindable
-    def next_track(self):
+    def next_track(self, quit_on_finished=False):
         @asyncio.coroutine
         def change_track():
-            next_track = yield from self.queue.next()
+            try:
+                next_track = yield from self.queue.next()
+            except StopPlaying:
+                if quit_on_finished:
+                    self.quit()
+                else:
+                    raise
             self.log.info('Changing to next track: {!r}'.format(
                 next_track.title))
             self.player.stop()
