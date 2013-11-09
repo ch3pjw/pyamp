@@ -84,3 +84,9 @@ def threaded_future(blocking_func, *args, **kwargs):
         thread.join()
     thread.start()
     return future
+
+
+def future_with_result(result):
+    future = asyncio.Future()
+    future.set_result(result)
+    return future

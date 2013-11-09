@@ -62,6 +62,16 @@ class SqlRepresentableType(PyampBase):
             value = self._col_types[col_name](value)
         self.__dict__[col_name] = value
 
+    def __eq__(self, other_instance):
+        if self.__class__.__name__ != other_instance.__class__.__name__:
+            return False
+        try:
+            return all(
+                getattr(self, col_name) == getattr(other_instance, col_name)
+                for col_name in self._get_col_names())
+        except AttributeError:
+            return False
+
     @classmethod
     def _get_schema(cls):
         rows = []
@@ -175,9 +185,45 @@ class SqlRepresentableType(PyampBase):
         return cls._search_one(cursor, search_dict, operator, ' OR ')
 
     @classmethod
-    def list(cls, cursor):
-        cursor.execute('SELECT * FROM {}'.format(cls.__name__))
+    def list(cls, cursor, random_order=False, max_=None):
+        query = 'SELECT * FROM {}'.format(cls.__name__)
+        if random_order:
+            query += ' ORDER BY RANDOM()'
+        if max_:
+            query += ' LIMIT {:d}'.format(max_)
+        cursor.execute(query)
         return [cls(*row) for row in cursor.fetchall()]
+
+    @classmethod
+    def get_random_entry(cls, cursor):
+        results = cls.list(cursor, random_order=True, max_=1)
+        assert len(results) == 1
+        return results[0]
+
+    @classmethod
+    def list_unique_column_entries(
+            cls, cursor, column_name, random_order=False, max_=None):
+        '''Returns a list of all the unique entries for a given database table
+        column. For example, one might want to know all the album names or
+        artists in the track database.
+        '''
+        query = 'SELECT DISTINCT {} FROM {}'.format(column_name, cls.__name__)
+        if random_order:
+            query += ' ORDER BY RANDOM()'
+        if max_:
+            query += ' LIMIT {:d}'.format(max_)
+        cursor.execute(query)
+        return [row[0] for row in cursor.fetchall()]
+
+    @classmethod
+    def get_random_unique_column_entry(cls, cursor, column_name):
+        '''Similar to get_random_entry, but works on data from
+        list_unique_column_entries.
+        '''
+        results = cls.list_unique_column_entries(
+            cursor, column_name, random_order=True, max_=1)
+        assert len(results) == 1
+        return results[0]
 
 
 class TrackMetadata(SqlRepresentableType):
@@ -232,10 +278,10 @@ def with_database_cursor(func):
 
 
 class Library(PyampBase):
-    def __init__(self, database_file):
+    def __init__(self, database_file, discoverer=None):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
-        self.discoverer = GstPbutils.Discoverer()
+        self.discoverer = discoverer or GstPbutils.Discoverer()
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []
@@ -318,3 +364,38 @@ class Library(PyampBase):
     @with_database_cursor
     def list_tracks(self, cursor):
         return TrackMetadata.list(cursor)
+
+    @blocking
+    @with_database_cursor
+    def get_random_track(self, cursor):
+        return TrackMetadata.get_random_entry(cursor)
+
+    @blocking
+    @with_database_cursor
+    def list_albums(self, cursor):
+        return TrackMetadata.list_unique_column_entries('album')
+
+    @blocking
+    @with_database_cursor
+    def get_random_album(self, cursor):
+        return TrackMetadata.get_random_unique_column_entry(cursor, 'album')
+
+    @blocking
+    @with_database_cursor
+    def get_album_tracks(self, cursor, album_name):
+        return TrackMetadata.exact_search(cursor, {'album': album_name})
+
+    @blocking
+    @with_database_cursor
+    def list_artists(self, cursor):
+        return TrackMetadata.list_unique_column_entries('artist')
+
+    @blocking
+    @with_database_cursor
+    def get_random_artist(self, cursor):
+        return TrackMetadata.get_random_unique_column_entry(cursor, 'artist')
+
+    @blocking
+    @with_database_cursor
+    def get_artist_tracks(self, cursor, artist_name):
+        return TrackMetadata.exact_search(cursor, {'artist': artist_name})
