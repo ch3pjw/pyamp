@@ -3,7 +3,8 @@ from unittest import TestCase
 import asyncio
 import threading
 
-from pyamp.util import clamp, moving_window, LoopingCall, threaded_future
+from pyamp.util import (
+    clamp, moving_window, LoopingCall, threaded_future, future_with_result)
 
 
 class TestUtil(TestCase):
@@ -64,3 +65,12 @@ class TestUtil(TestCase):
         future = threaded_future(faily)
         loop = asyncio.get_event_loop()
         self.assertRaises(KeyError, loop.run_until_complete, future)
+
+    def test_future_with_result(self):
+        @asyncio.coroutine
+        def check():
+            result = yield from future_with_result(True)
+            self.assertTrue(result)
+        loop = asyncio.get_event_loop()
+        task = asyncio.Task(check())
+        loop.run_until_complete(task)
