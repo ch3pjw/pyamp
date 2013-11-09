@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from functools import wraps
+from collections import MutableMapping
 from abc import abstractproperty
 from gi.repository import Gst, GstPbutils
 
@@ -29,16 +30,28 @@ class SqlRepresentableType(PyampBase):
     def __init__(self, *args):
         for col_name in self._col_types:
             self.__dict__[col_name] = None
-        try:
+        if len(args) == 1:
             if isinstance(args[0], Gst.TagList):
-                dict_like = parse_gst_tag_list(args[0])
+                self._set_from_dict(parse_gst_tag_list(args[0]))
+            elif isinstance(args[0], MutableMapping):
+                self._set_from_dict(args[0])
             else:
-                dict_like = args[0]
-            for name, value in dict_like.items():
+                self._set_from_list(args)
+        else:
+            self._set_from_list(args)
+
+    def _set_from_list(self, data):
+        for col_name, col_data in zip(self._get_col_names(), data):
+            setattr(self, col_name, col_data)
+
+    def _set_from_dict(self, data):
+        for name, value in data.items():
+            if name in self._col_types:
                 setattr(self, name, value)
-        except (IndexError, AttributeError):
-            for col_name, col_data in zip(self._get_col_names(), args):
-                setattr(self, col_name, col_data)
+            else:
+                self.log.warning(
+                    'Skipping untracked tag {!r} with value {!r}'.format(
+                        name, value))
 
     @classmethod
     def _get_col_names(cls):
@@ -232,10 +245,14 @@ class TrackMetadata(SqlRepresentableType):
         'artist': str,
         'audio_codec': str,
         'bitrate': int,
+        'channel_mode': str,
         'container_format': str,
+        'comment': str,
         'datetime': str,
+        'duration': int,
         'encoder': str,
         'encoder_version': str,
+        'extended_comment': str,
         'file_path': str,
         'genre': str,
         'modified_time': float,
@@ -304,7 +321,7 @@ class Library(PyampBase):
             metadata.file_path = file_path
             file_stats = os.stat(file_path)
             metadata.modified_time = file_stats.st_mtime
-            self.log.debug('Found file {}'.format(file_path))
+            self.log.debug('Processed file {}'.format(file_path))
             return metadata
 
     def _dir_modified(self, cursor, dir_path):
