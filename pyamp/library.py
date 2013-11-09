@@ -364,3 +364,38 @@ class Library(PyampBase):
     @with_database_cursor
     def list_tracks(self, cursor):
         return TrackMetadata.list(cursor)
+
+    @blocking
+    @with_database_cursor
+    def get_random_track(self, cursor):
+        return TrackMetadata.get_random_entry(cursor)
+
+    @blocking
+    @with_database_cursor
+    def list_albums(self, cursor):
+        return TrackMetadata.list_unique_column_entries('album')
+
+    @blocking
+    @with_database_cursor
+    def get_random_album(self, cursor):
+        return TrackMetadata.get_random_unique_column_entry(cursor, 'album')
+
+    @blocking
+    @with_database_cursor
+    def get_album_tracks(self, cursor, album_name):
+        return TrackMetadata.exact_search(cursor, {'album': album_name})
+
+    @blocking
+    @with_database_cursor
+    def list_artists(self, cursor):
+        return TrackMetadata.list_unique_column_entries('artist')
+
+    @blocking
+    @with_database_cursor
+    def get_random_artist(self, cursor):
+        return TrackMetadata.get_random_unique_column_entry(cursor, 'artist')
+
+    @blocking
+    @with_database_cursor
+    def get_artist_tracks(self, cursor, artist_name):
+        return TrackMetadata.exact_search(cursor, {'artist': artist_name})
