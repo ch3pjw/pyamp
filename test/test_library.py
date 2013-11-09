@@ -90,7 +90,7 @@ class TestSqlRepresentableType(TestCase):
             'CREATE TABLE TestSqlType({})'.format(self.schema_string))
 
     @patch('pyamp.library.sqlite3.Cursor', autospec=True)
-    # FIXME: don't seem to autospec classmethods and them be callable :-(
+    # FIXME: doesn't seem autospec'd classmethods are callable :-(
     @patch('pyamp.library.SqlRepresentableType.create_table')
     @patch('pyamp.library.SqlRepresentableType.drop_table')
     def test_create_table_if_required(

@@ -278,10 +278,10 @@ def with_database_cursor(func):
 
 
 class Library(PyampBase):
-    def __init__(self, database_file):
+    def __init__(self, database_file, discoverer=None):
         super(Library, self).__init__()
         self.database_file = os.path.expanduser(database_file)
-        self.discoverer = GstPbutils.Discoverer()
+        self.discoverer = discoverer or GstPbutils.Discoverer()
 
     def _do_discover_dir(self, dir_path, file_names):
         track_metadata_list = []
