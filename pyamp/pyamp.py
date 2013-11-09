@@ -14,6 +14,7 @@ asyncio.log.logger.setLevel('INFO')
 from .base import PyampBase
 from .player import Player
 from .library import Library
+from .queue import Queue, PlayMode
 from .config import load_config
 from .keyboard import Keyboard, bindable, is_bindable
 from .terminal import Terminal
@@ -30,6 +31,10 @@ class UI(PyampBase):
         self.keyboard = Keyboard()
 
         self.player = Player(initial_volume=user_config.persistent.volume)
+        self.library = Library(user_config.library.database_path)
+        play_mode = PlayMode.__members__.get(
+            user_config.persistent.play_mode, PlayMode.album_shuffle)
+        self.queue = Queue(self.library, play_mode=play_mode)
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
@@ -106,6 +111,26 @@ class UI(PyampBase):
         else:
             clean_up()
 
+    @bindable
+    def next_track(self):
+        @asyncio.coroutine
+        def change_track():
+            next_track = yield from self.queue.next()
+            self.log.info('Changing to next track: {}'.format(
+                next_track.title))
+            self.player.stop()
+            self.player.set_file(next_track.file_path)
+            self.player.play()
+        task = asyncio.Task(change_track())
+
+    @bindable
+    def previous_track(self):
+        new_track = self.queue.prev()
+        self.log.info('Changing to previous track: {}'.format(new_track.title))
+        self.player.stop()
+        self.player.set_file(new_track.file_path)
+        self.player.play()
+
     def _setup_terminal_input(self):
         if hasattr(self.infile, 'fileno'):
             # Use fcntl to set stdin to non-blocking. WARNING - this is not
@@ -149,7 +174,6 @@ def main():
     user_config = load_config()
     set_up_environment(user_config)
     interface = UI(user_config)
-    library = Library(user_config.library.database_path)
     if os.path.exists(sys.argv[1]):
         interface.player.set_file(sys.argv[1])
         interface.player.play()
@@ -157,12 +181,12 @@ def main():
         # Oh no! There's no file, let's do a search!
         @asyncio.coroutine
         def search_track():
-            result = yield from library.discover_on_path(
+            result = yield from interface.library.discover_on_path(
                 user_config.library.index_paths)
-            result = yield from library.search_tracks(sys.argv[1])
+            result = yield from interface.library.search_tracks(sys.argv[1])
             if result:
-                interface.player.set_file(result[0].file_path)
-                interface.player.play()
+                interface.queue.extend(result)
+                interface.next_track()
         task = asyncio.Task(search_track())
     interface.run()
 
