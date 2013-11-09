@@ -14,7 +14,7 @@ asyncio.log.logger.setLevel('INFO')
 from .base import PyampBase
 from .player import Player
 from .library import Library
-from .queue import Queue, PlayMode
+from .queue import Queue, PlayMode, StopPlaying
 from .config import load_config
 from .keyboard import Keyboard, bindable, is_bindable
 from .terminal import Terminal
@@ -35,6 +35,7 @@ class UI(PyampBase):
         play_mode = PlayMode.__members__.get(
             user_config.persistent.play_mode, PlayMode.album_shuffle)
         self.queue = Queue(self.library, play_mode=play_mode)
+        self.player.track_end_callback = self.next_track
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
@@ -71,7 +72,7 @@ class UI(PyampBase):
     def update(self):
         try:
             self.player.update()
-        except StopIteration:
+        except StopPlaying:
             self.quit()
         self.draw()
 
@@ -116,7 +117,7 @@ class UI(PyampBase):
         @asyncio.coroutine
         def change_track():
             next_track = yield from self.queue.next()
-            self.log.info('Changing to next track: {}'.format(
+            self.log.info('Changing to next track: {!r}'.format(
                 next_track.title))
             self.player.stop()
             self.player.set_file(next_track.file_path)

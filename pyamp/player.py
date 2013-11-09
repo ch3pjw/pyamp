@@ -70,6 +70,7 @@ class Player(PyampBase):
 
     def __init__(self, initial_volume=1):
         super().__init__()
+        self.track_end_callback = lambda: None
         self._setup_gstreamer_pipeline(initial_volume)
         self.tags = {'title': ''}
 
@@ -122,8 +123,9 @@ class Player(PyampBase):
                 timeout=0.01)
             if message:
                 if message.type == Gst.MessageType.EOS:
-                    self.stop()
-                    raise StopIteration('Track finished successfully!')
+                    self.log.info('Track {!r} finished playing'.format(
+                        self.tags['title']))
+                    self.track_end_callback()
                 if message.type == Gst.MessageType.TAG:
                     self.tags.update(parse_gst_tag_list(message.parse_tag()))
             else:
