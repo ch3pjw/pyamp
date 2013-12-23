@@ -25,7 +25,6 @@ setup(
     install_requires=[
         'asyncio',
         'blessings',
-        'enum34',
         'pyyaml'],
     packages=[
         'pyamp'],
