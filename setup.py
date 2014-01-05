@@ -24,7 +24,7 @@ setup(
     version=__version__,
     install_requires=[
         'asyncio',
-        'blessings',
+        'jcn',
         'enum34',
         'pyyaml'],
     packages=[
