@@ -20,7 +20,6 @@ from .library import Library
 from .queue import Queue, PlayMode, StopPlaying
 from .config import load_config
 from .keyboard import bindable, is_bindable
-from .terminal import Terminal
 from .ui import TimeCheck
 
 
@@ -143,7 +142,6 @@ class UI(PyampBase):
         self.player.play()
 
     def run(self):
-        #self._setup_terminal_input()
         self.looping_call = LoopingCall(self.update)
         self.looping_call.start(1 / 20)
         self.root.run()
