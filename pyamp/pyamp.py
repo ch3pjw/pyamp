@@ -11,7 +11,7 @@ import asyncio
 import fcntl
 asyncio.log.logger.setLevel('INFO')
 
-from jcn import Root, VerticalSplitContainer, ProgressBar, Fill
+from jcn import Root, VerticalSplitContainer, ProgressBar, Fill, Label, Stack
 from jcn.util import LoopingCall
 
 from .base import PyampBase
@@ -32,12 +32,17 @@ class UI(PyampBase):
         self.loop = event_loop or asyncio.get_event_loop()
 
         self.player = Player(initial_volume=user_config.persistent.volume)
+        self.player.tags.on_update_callback = self._on_tag_update
         self.library = Library(user_config.library.database_path)
         play_mode = PlayMode.__members__.get(
             user_config.persistent.play_mode, PlayMode.album_shuffle)
         self.queue = Queue(self.library, play_mode=play_mode)
         self.player.track_end_callback = (
             lambda: self.next_track(quit_on_finished=True))
+
+        self.track_info = Label()
+        self.track_info.halign = 'center'
+
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
@@ -45,7 +50,12 @@ class UI(PyampBase):
         fill.min_width = fill.max_width = 1
         self.status_bar = VerticalSplitContainer(
             self.progress_bar, fill, self.time_check)
-        self.root = Root(self.status_bar)
+
+        self.stack = Stack(self.track_info, self.status_bar)
+        self.stack.valign = 'bottom'
+
+        self.root = Root(self.stack)
+        self.root.handle_input = self.handle_input
         self.key_bindings = self._create_key_bindings()
 
     def _create_bindable_funcs_map(self):
@@ -73,6 +83,10 @@ class UI(PyampBase):
                             func_name))
         return key_bindings
 
+    def _on_tag_update(self, name, value):
+        if name == 'title':
+            self.track_info.content = value
+
     def update(self):
         self.player.update()
         if self.player.playing:
@@ -86,8 +100,8 @@ class UI(PyampBase):
     def _handle_sigint(self, signal, frame):
         self.quit()
 
-    def handle_input(self, data):
-        action = self.key_bindings.get(keystroke, lambda: None)
+    def handle_input(self, key):
+        action = self.key_bindings.get(key, lambda: None)
         action()
 
     @bindable

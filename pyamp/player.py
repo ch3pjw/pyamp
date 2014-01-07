@@ -5,7 +5,8 @@ from gi.repository import Gst, GstController
 
 from .base import PyampBase
 from .keyboard import bindable
-from .util import clamp, moving_window, parse_gst_tag_list
+from .util import (
+    clamp, moving_window, parse_gst_tag_list, DictWithUpdateCallback)
 
 
 class SweepingInterpolationControlSource(
@@ -72,7 +73,7 @@ class Player(PyampBase):
         super().__init__()
         self.track_end_callback = lambda: None
         self._setup_gstreamer_pipeline(initial_volume)
-        self.tags = {'title': ''}
+        self.tags = DictWithUpdateCallback(title='')
 
     def _setup_gstreamer_pipeline(self, initial_volume):
         Gst.init(None)
