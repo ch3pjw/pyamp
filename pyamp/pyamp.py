@@ -117,8 +117,11 @@ class UI(PyampBase):
 
     @asyncio.coroutine
     def _async_search(self, query):
-        self.latest_search_results = yield from self.library.search_tracks(
-            query)
+        if query:
+            self.latest_search_results = yield from self.library.search_tracks(
+                query)
+        else:
+            self.latest_search_results = []
         self.search_results.content = [
             Label(r.title) for r in self.latest_search_results]
 
