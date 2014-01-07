@@ -11,7 +11,8 @@ import asyncio
 import fcntl
 asyncio.log.logger.setLevel('INFO')
 
-from jcn import Root, VerticalSplitContainer, ProgressBar, Fill, Label, Stack
+from jcn import (
+    Root, VerticalSplitContainer, ProgressBar, Fill, Label, Stack, LineInput)
 from jcn.util import LoopingCall
 
 from .base import PyampBase
@@ -39,6 +40,14 @@ class UI(PyampBase):
         self.player.track_end_callback = (
             lambda: self.next_track(quit_on_finished=True))
 
+        self._make_ui_elements()
+        self.key_bindings = self._create_key_bindings()
+
+        self.searching = False
+
+    def _make_ui_elements(self):
+        self.search_results = Label()
+
         self.track_info = Label()
         self.track_info.halign = 'center'
 
@@ -50,12 +59,16 @@ class UI(PyampBase):
         self.status_bar = VerticalSplitContainer(
             self.progress_bar, fill, self.time_check)
 
-        self.stack = Stack(self.track_info, self.status_bar)
+        self.input = LineInput('Enter search')
+        self.input_filler = Fill(' ')
+
+        self.stack = Stack(
+            self.search_results, self.track_info, self.status_bar,
+            self.input_filler)
         self.stack.valign = 'bottom'
 
-        self.root = Root(self.stack)
+        self.root = Root(self.stack, loop=self.loop)
         self.root.handle_input = self.handle_input
-        self.key_bindings = self._create_key_bindings()
 
     def _create_bindable_funcs_map(self):
         bindable_funcs = {}
@@ -86,6 +99,31 @@ class UI(PyampBase):
         if name == 'title':
             self.track_info.content = value
 
+    def _on_search_key(self):
+        if not self.searching:
+            self.input.content_updated_callback = self._on_search_update
+            self.input.line_received_callback = self._on_search_finalise
+            self.stack.replace_element(self.input_filler, self.input)
+            self.stack.active_element = self.input
+            self.searching = True
+
+    def _on_search_update(self, query):
+        self.loop.call_soon(asyncio.async(self._async_search(query)))
+
+    @asyncio.coroutine
+    def _async_search(self, query):
+        results = yield from self.library.search_tracks(query)
+        if results:
+            self.search_results.content = '; '.join(r.title for r in results)
+        else:
+            self.search_results.content = ''
+
+    def _on_search_finalise(self, query):
+        if self.searching:
+            self.stack.replace_element(self.input, self.input_filler)
+            self.input.on_update_callback = None
+            self.searching = False
+
     def update(self):
         self.player.update()
         if self.player.playing:
@@ -100,6 +138,8 @@ class UI(PyampBase):
         self.quit()
 
     def handle_input(self, key):
+        if key == '/':
+            self._on_search_key()
         action = self.key_bindings.get(key, lambda: None)
         action()
 
