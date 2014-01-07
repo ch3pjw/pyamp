@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from itertools import islice
+from itertools import islice, chain
 
 
 def clamp(value, min_=None, max_=None):
@@ -67,3 +67,19 @@ def future_with_result(result):
     future = asyncio.Future()
     future.set_result(result)
     return future
+
+
+class DictWithUpdateCallback(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_update_callback = None
+
+    def __setitem__(self, name, value):
+        super().__setitem__(name, value)
+        if self.on_update_callback:
+            self.on_update_callback(name, value)
+
+    def update(self, update_dict, **kwargs):
+        super().update(update_dict, **kwargs)
+        for k, v in chain(update_dict.items(), kwargs.items()):
+            self.on_update_callback(k, v)

@@ -4,7 +4,8 @@ import asyncio
 import threading
 
 from pyamp.util import (
-    clamp, moving_window, threaded_future, future_with_result)
+    clamp, moving_window, threaded_future, future_with_result,
+    DictWithUpdateCallback)
 
 
 class TestUtil(TestCase):
@@ -58,3 +59,19 @@ class TestUtil(TestCase):
         loop = asyncio.get_event_loop()
         task = asyncio.Task(check())
         loop.run_until_complete(task)
+
+    def test_dict_with_update_callback(self):
+        d = DictWithUpdateCallback(foo='bar')
+        def callback(name, value):
+            self.callback_name = name
+            self.callback_value = value
+        d.on_update_callback = callback
+        d['foo'] = 'baz'
+        self.assertEqual(self.callback_name, 'foo')
+        self.assertEqual(self.callback_value, 'baz')
+        d['hello'] = 'world'
+        self.assertEqual(self.callback_name, 'hello')
+        self.assertEqual(self.callback_value, 'world')
+        d.update({'foo': 'qux'})
+        self.assertEqual(self.callback_name, 'foo')
+        self.assertEqual(self.callback_value, 'qux')
