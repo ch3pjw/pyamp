@@ -45,6 +45,7 @@ class UI(PyampBase):
         self.key_bindings = self._create_key_bindings()
 
         self.searching = False
+        self.latest_search_results = []
 
     def _make_ui_elements(self):
         self.search_results = Zebra()
@@ -116,17 +117,19 @@ class UI(PyampBase):
 
     @asyncio.coroutine
     def _async_search(self, query):
-        results = yield from self.library.search_tracks(query)
-        if results:
-            self.search_results.content = [Label(r.title) for r in results]
-        else:
-            self.search_results.content = []
+        self.latest_search_results = yield from self.library.search_tracks(
+            query)
+        self.search_results.content = [
+            Label(r.title) for r in self.latest_search_results]
 
     def _on_search_finalise(self, query):
         if self.searching:
             self.hsplit.replace_element(self.input, self.input_filler)
             self.input.content_updated_callback = None
+            self.input.line_received_callback = None
+            self.search_results.content = []
             self.searching = False
+            self.queue.extend(self.latest_search_results)
 
     def update(self):
         self.player.update()
