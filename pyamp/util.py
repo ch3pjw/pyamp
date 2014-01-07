@@ -46,29 +46,6 @@ def parse_gst_tag_list(gst_tag_list):
     return parsed_tags
 
 
-class LoopingCall:
-    def __init__(self, func, *args, loop=None, **kwargs):
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self.loop = loop or asyncio.get_event_loop()
-        self.interval = 0
-        self.running = False
-
-    def start(self, interval):
-        self.interval = interval
-        self.running = True
-        self._execute()
-
-    def _execute(self):
-        self.func(*self.args, **self.kwargs)
-        if self.running:
-            self.loop.call_later(self.interval, self._execute)
-
-    def stop(self):
-        self.running = False
-
-
 def threaded_future(blocking_func, *args, **kwargs):
     future = asyncio.Future()
     def call_in_thread():

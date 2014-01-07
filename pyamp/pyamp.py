@@ -11,15 +11,17 @@ import asyncio
 import fcntl
 asyncio.log.logger.setLevel('INFO')
 
+from jcn import Root, VerticalSplitContainer, ProgressBar, Fill
+from jcn.util import LoopingCall
+
 from .base import PyampBase
 from .player import Player
 from .library import Library
 from .queue import Queue, PlayMode, StopPlaying
 from .config import load_config
-from .keyboard import Keyboard, bindable, is_bindable
+from .keyboard import bindable, is_bindable
 from .terminal import Terminal
-from .ui import HorizontalContainer, ProgressBar, TimeCheck
-from .util import LoopingCall
+from .ui import TimeCheck
 
 
 class UI(PyampBase):
@@ -28,7 +30,6 @@ class UI(PyampBase):
         self.user_config = user_config
         self.infile = stdin or sys.stdin
         self.loop = event_loop or asyncio.get_event_loop()
-        self.keyboard = Keyboard()
 
         self.player = Player(initial_volume=user_config.persistent.volume)
         self.library = Library(user_config.library.database_path)
@@ -40,9 +41,11 @@ class UI(PyampBase):
         self.progress_bar = ProgressBar(
             self.user_config.appearance.progress_bar)
         self.time_check = TimeCheck()
-        self.status_bar = HorizontalContainer(
-            (self.progress_bar, self.time_check))
-        self.terminal = Terminal()
+        fill = Fill(' ')
+        fill.min_width = fill.max_width = 1
+        self.status_bar = VerticalSplitContainer(
+            self.progress_bar, fill, self.time_check)
+        self.root = Root(self.status_bar)
         self.key_bindings = self._create_key_bindings()
 
     def _create_bindable_funcs_map(self):
@@ -72,10 +75,6 @@ class UI(PyampBase):
 
     def update(self):
         self.player.update()
-        self.draw()
-
-    def draw(self):
-        #print(self.terminal.clear())
         if self.player.playing:
             position = (self.player.get_position() or 0) / Gst.SECOND
             duration = (self.player.get_duration() or 0) / Gst.SECOND
@@ -83,18 +82,11 @@ class UI(PyampBase):
                 self.progress_bar.fraction = position / duration
             self.time_check.position = position
             self.time_check.duration = duration
-        total_width = self.terminal.width - 2
-        with self.terminal.location(0, self.terminal.height - 2):
-            print(self.player.tags['title'].center(self.terminal.width))
-            print(self.status_bar.draw(total_width, 1).center(
-                self.terminal.width), end='')
-        sys.stdout.flush()
 
     def _handle_sigint(self, signal, frame):
         self.quit()
 
     def handle_input(self, data):
-        keystroke = self.keyboard[data]
         action = self.key_bindings.get(keystroke, lambda: None)
         action()
 
@@ -136,28 +128,11 @@ class UI(PyampBase):
         self.player.set_file(new_track.file_path)
         self.player.play()
 
-    def _setup_terminal_input(self):
-        if hasattr(self.infile, 'fileno'):
-            # Use fcntl to set stdin to non-blocking. WARNING - this is not
-            # particularly portable!
-            flags = fcntl.fcntl(sys.stdin, fcntl.F_GETFL)
-            flags = flags | os.O_NONBLOCK
-            fcntl.fcntl(sys.stdin, fcntl.F_SETFL, flags)
-        def read_stdin():
-            data = self.infile.read()
-            self.handle_input(data)
-        self.loop.add_reader(sys.stdin, read_stdin)
-
     def run(self):
-        with self.terminal.fullscreen():
-            with self.terminal.hidden_cursor():
-                with self.terminal.unbuffered_input():
-                    signal.signal(signal.SIGINT, self._handle_sigint)
-                    signal.signal(signal.SIGTSTP, self.terminal.handle_sigtstp)
-                    self._setup_terminal_input()
-                    self.looping_call = LoopingCall(self.update)
-                    self.looping_call.start(1 / 20)
-                    self.loop.run_forever()
+        #self._setup_terminal_input()
+        self.looping_call = LoopingCall(self.update)
+        self.looping_call.start(1 / 20)
+        self.root.run()
 
 
 def set_up_environment(user_config):
