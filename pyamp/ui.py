@@ -6,8 +6,30 @@ class TimeCheck(ABCDisplayElement):
 
     def __init__(self):
         super().__init__()
-        self.position = 0
-        self.duration = 0
+        self._position = 0
+        self._duration = 0
+
+    @property
+    def position(self):
+        return self._position
+
+    @position.setter
+    def position(self, value):
+        self._position = value
+        self.updated = True
+        if self.root:
+            self.root.update()
+
+    @property
+    def duration(self):
+        return self._duration
+
+    @duration.setter
+    def duration(self, value):
+        self._duration = value
+        self.updated = True
+        if self.root:
+            self.root.update()
 
     @property
     def min_width(self):
