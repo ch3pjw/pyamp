@@ -59,17 +59,17 @@ class UI(PyampBase):
         self.time_check = TimeCheck()
         fill = Fill(' ')
         fill.min_width = fill.max_width = 1
-        self.status_bar = VerticalSplitContainer(
+        self.track_status_bar = VerticalSplitContainer(
             self.progress_bar, fill, self.time_check)
-        self.status_bar.min_height = self.status_bar.max_height = 1
+        self.track_status_bar.min_height = self.track_status_bar.max_height = 1
 
         self.input = LineInput('Enter search')
-        self.input_filler = Fill(' ')
-        self.input_filler.min_height = self.input_filler.max_height = 1
+        self.message_bar = Label()
+        self.message_bar.min_height = self.message_bar.max_height = 1
 
         self.hsplit = HorizontalSplitContainer(
-            self.search_results, self.track_info, self.status_bar,
-            self.input_filler)
+            self.search_results, self.track_info, self.track_status_bar,
+            self.message_bar)
 
         self.root = Root(self.hsplit, loop=self.loop)
         self.root.handle_input = self.handle_input
@@ -107,7 +107,7 @@ class UI(PyampBase):
         if not self.searching:
             self.input.content_updated_callback = self._on_search_update
             self.input.line_received_callback = self._on_search_finalise
-            self.hsplit.replace_element(self.input_filler, self.input)
+            self.hsplit.replace_element(self.message_bar, self.input)
             self.hsplit.active_element = self.input
             self.searching = True
 
@@ -124,12 +124,15 @@ class UI(PyampBase):
 
     def _on_search_finalise(self, query):
         if self.searching:
-            self.hsplit.replace_element(self.input, self.input_filler)
+            self.hsplit.replace_element(self.input, self.message_bar)
             self.input.content_updated_callback = None
             self.input.line_received_callback = None
             self.search_results.content = []
             self.searching = False
             self.queue.extend(self.latest_search_results)
+            self.message_bar.content = (
+                'Added {:d} tracks to play queue'.format(
+                    len(self.latest_search_results)))
 
     def update(self):
         self.player.update()
