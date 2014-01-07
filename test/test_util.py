@@ -4,7 +4,8 @@ import asyncio
 import threading
 
 from pyamp.util import (
-    clamp, moving_window, LoopingCall, threaded_future, future_with_result)
+    clamp, moving_window, threaded_future, future_with_result,
+    DictWithUpdateCallback)
 
 
 class TestUtil(TestCase):
@@ -27,22 +28,6 @@ class TestUtil(TestCase):
         expected = [(1, 2), (2, 3), (3, 4), (4, 5)]
         for actual, expected in zip(moving_window([1, 2, 3, 4, 5]), expected):
             self.assertEqual(actual, expected)
-
-    def test_looping_call(self):
-        result = []
-        future = asyncio.Future()
-        def loopable(n):
-            for i in range(n):
-                yield result.append(i)
-            looping_call.stop()
-            future.set_result('done')
-            yield result.append(n)
-        func = loopable(3).__next__
-        looping_call = LoopingCall(func)
-        looping_call.start(0.1)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(future)
-        self.assertEqual(result, [0, 1, 2, 3])
 
     def test_threaded_future(self):
         result = ['']
@@ -74,3 +59,19 @@ class TestUtil(TestCase):
         loop = asyncio.get_event_loop()
         task = asyncio.Task(check())
         loop.run_until_complete(task)
+
+    def test_dict_with_update_callback(self):
+        d = DictWithUpdateCallback(foo='bar')
+        def callback(name, value):
+            self.callback_name = name
+            self.callback_value = value
+        d.on_update_callback = callback
+        d['foo'] = 'baz'
+        self.assertEqual(self.callback_name, 'foo')
+        self.assertEqual(self.callback_value, 'baz')
+        d['hello'] = 'world'
+        self.assertEqual(self.callback_name, 'hello')
+        self.assertEqual(self.callback_value, 'world')
+        d.update({'foo': 'qux'})
+        self.assertEqual(self.callback_name, 'foo')
+        self.assertEqual(self.callback_value, 'qux')
