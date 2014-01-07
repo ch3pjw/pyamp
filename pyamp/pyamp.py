@@ -12,7 +12,8 @@ import fcntl
 asyncio.log.logger.setLevel('INFO')
 
 from jcn import (
-    Root, VerticalSplitContainer, ProgressBar, Fill, Label, Stack, LineInput)
+    Root, VerticalSplitContainer, HorizontalSplitContainer, ProgressBar, Fill,
+    Label, Zebra, LineInput)
 from jcn.util import LoopingCall
 
 from .base import PyampBase
@@ -46,7 +47,8 @@ class UI(PyampBase):
         self.searching = False
 
     def _make_ui_elements(self):
-        self.search_results = Label()
+        self.search_results = Zebra()
+        self.search_results.even_format = Root.format.on_color(234)
 
         self.track_info = Label()
         self.track_info.halign = 'center'
@@ -58,16 +60,17 @@ class UI(PyampBase):
         fill.min_width = fill.max_width = 1
         self.status_bar = VerticalSplitContainer(
             self.progress_bar, fill, self.time_check)
+        self.status_bar.min_height = self.status_bar.max_height = 1
 
         self.input = LineInput('Enter search')
         self.input_filler = Fill(' ')
+        self.input_filler.min_height = self.input_filler.max_height = 1
 
-        self.stack = Stack(
+        self.hsplit = HorizontalSplitContainer(
             self.search_results, self.track_info, self.status_bar,
             self.input_filler)
-        self.stack.valign = 'bottom'
 
-        self.root = Root(self.stack, loop=self.loop)
+        self.root = Root(self.hsplit, loop=self.loop)
         self.root.handle_input = self.handle_input
 
     def _create_bindable_funcs_map(self):
@@ -103,25 +106,26 @@ class UI(PyampBase):
         if not self.searching:
             self.input.content_updated_callback = self._on_search_update
             self.input.line_received_callback = self._on_search_finalise
-            self.stack.replace_element(self.input_filler, self.input)
-            self.stack.active_element = self.input
+            self.hsplit.replace_element(self.input_filler, self.input)
+            self.hsplit.active_element = self.input
             self.searching = True
 
     def _on_search_update(self, query):
-        self.loop.call_soon(asyncio.async(self._async_search(query)))
+        future = asyncio.async(self._async_search(query))
+        return future
 
     @asyncio.coroutine
     def _async_search(self, query):
         results = yield from self.library.search_tracks(query)
         if results:
-            self.search_results.content = '; '.join(r.title for r in results)
+            self.search_results.content = [Label(r.title) for r in results]
         else:
-            self.search_results.content = ''
+            self.search_results.content = []
 
     def _on_search_finalise(self, query):
         if self.searching:
-            self.stack.replace_element(self.input, self.input_filler)
-            self.input.on_update_callback = None
+            self.hsplit.replace_element(self.input, self.input_filler)
+            self.input.content_updated_callback = None
             self.searching = False
 
     def update(self):
